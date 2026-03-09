@@ -1,0 +1,236 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type AuthHandler struct {
+	DB             *sql.DB
+	GoogleClientID string
+	JWTSecret      string
+}
+
+func NewAuthHandler(db *sql.DB, googleClientID, jwtSecret string) *AuthHandler {
+	return &AuthHandler{
+		DB:             db,
+		GoogleClientID: googleClientID,
+		JWTSecret:      jwtSecret,
+	}
+}
+
+type GoogleLoginRequest struct {
+	Credential string `json:"credential"`
+}
+
+type GoogleTokenInfo struct {
+	Sub     string `json:"sub"`
+	Email   string `json:"email"`
+	Name    string `json:"name"`
+	Picture string `json:"picture"`
+	Aud     string `json:"aud"`
+}
+
+type AuthResponse struct {
+	Token string      `json:"token"`
+	User  interface{} `json:"user"`
+}
+
+func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	var req GoogleLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Credential == "" {
+		writeError(w, http.StatusBadRequest, "credential is required")
+		return
+	}
+
+	// Verify the Google ID token
+	tokenInfo, err := h.verifyGoogleToken(req.Credential)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Invalid Google token: "+err.Error())
+		return
+	}
+
+	// Check that the audience matches our client ID
+	if tokenInfo.Aud != h.GoogleClientID {
+		writeError(w, http.StatusUnauthorized, "Token audience mismatch")
+		return
+	}
+
+	// Find or create user
+	user, err := h.findOrCreateUser(tokenInfo)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to process user")
+		return
+	}
+
+	// Generate JWT
+	token, err := h.generateJWT(user.ID, user.Email)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to generate token")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, AuthResponse{
+		Token: token,
+		User:  user,
+	})
+}
+
+func (h *AuthHandler) verifyGoogleToken(idToken string) (*GoogleTokenInfo, error) {
+	resp, err := http.Get("https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("token verification failed: %s", string(body))
+	}
+
+	var tokenInfo GoogleTokenInfo
+	if err := json.Unmarshal(body, &tokenInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse token info: %w", err)
+	}
+
+	return &tokenInfo, nil
+}
+
+type userRow struct {
+	ID        int64          `json:"id"`
+	GoogleID  string         `json:"google_id"`
+	Email     string         `json:"email"`
+	Name      string         `json:"name"`
+	AvatarURL sql.NullString `json:"-"`
+	Sex       sql.NullString `json:"-"`
+	Age       sql.NullInt64  `json:"-"`
+	WeightKg  sql.NullFloat64 `json:"-"`
+	Language  sql.NullString  `json:"-"`
+	IsCoach   sql.NullBool    `json:"-"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+type userJSON struct {
+	ID        int64     `json:"id"`
+	GoogleID  string    `json:"google_id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	AvatarURL string    `json:"avatar_url"`
+	Sex       string    `json:"sex"`
+	Age       int       `json:"age"`
+	WeightKg  float64   `json:"weight_kg"`
+	Language  string    `json:"language"`
+	IsCoach   bool      `json:"is_coach"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func rowToJSON(row userRow) userJSON {
+	u := userJSON{
+		ID:        row.ID,
+		GoogleID:  row.GoogleID,
+		Email:     row.Email,
+		Name:      row.Name,
+		Language:  "es",
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}
+	if row.AvatarURL.Valid {
+		u.AvatarURL = row.AvatarURL.String
+	}
+	if row.Sex.Valid {
+		u.Sex = row.Sex.String
+	}
+	if row.Age.Valid {
+		u.Age = int(row.Age.Int64)
+	}
+	if row.WeightKg.Valid {
+		u.WeightKg = row.WeightKg.Float64
+	}
+	if row.Language.Valid {
+		u.Language = row.Language.String
+	}
+	if row.IsCoach.Valid {
+		u.IsCoach = row.IsCoach.Bool
+	}
+	return u
+}
+
+func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, error) {
+	var row userRow
+	err := h.DB.QueryRow(`
+		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, created_at, updated_at
+		FROM users WHERE google_id = ?
+	`, tokenInfo.Sub).Scan(
+		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
+		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.CreatedAt, &row.UpdatedAt,
+	)
+
+	if err == nil {
+		// Update name/email/avatar if changed
+		h.DB.Exec(`
+			UPDATE users SET email = ?, name = ?, avatar_url = ?, updated_at = NOW() WHERE google_id = ?
+		`, tokenInfo.Email, tokenInfo.Name, tokenInfo.Picture, tokenInfo.Sub)
+
+		row.Email = tokenInfo.Email
+		row.Name = tokenInfo.Name
+		row.AvatarURL = sql.NullString{String: tokenInfo.Picture, Valid: tokenInfo.Picture != ""}
+		u := rowToJSON(row)
+		return &u, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	// Create new user
+	result, err := h.DB.Exec(`
+		INSERT INTO users (google_id, email, name, avatar_url) VALUES (?, ?, ?, ?)
+	`, tokenInfo.Sub, tokenInfo.Email, tokenInfo.Name, tokenInfo.Picture)
+	if err != nil {
+		return nil, err
+	}
+
+	id, _ := result.LastInsertId()
+	err = h.DB.QueryRow(`
+		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, created_at, updated_at
+		FROM users WHERE id = ?
+	`, id).Scan(
+		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
+		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.CreatedAt, &row.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	u := rowToJSON(row)
+	return &u, nil
+}
+
+func (h *AuthHandler) generateJWT(userID int64, email string) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id": userID,
+		"email":   email,
+		"exp":     time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"iat":     time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(h.JWTSecret))
+}
