@@ -1,5 +1,7 @@
 -- FitReg complete schema
 -- Drop all tables in reverse dependency order
+DROP TABLE IF EXISTS coach_ratings;
+DROP TABLE IF EXISTS coach_achievements;
 DROP TABLE IF EXISTS assigned_workout_segments;
 DROP TABLE IF EXISTS assigned_workouts;
 DROP TABLE IF EXISTS coach_students;
@@ -17,6 +19,9 @@ CREATE TABLE users (
     weight_kg DECIMAL(5,2),
     language VARCHAR(5) DEFAULT 'es',
     is_coach BOOLEAN DEFAULT FALSE,
+    is_admin BOOLEAN DEFAULT FALSE,
+    coach_description TEXT,
+    coach_public BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_users_google_id (google_id),
@@ -49,6 +54,37 @@ CREATE TABLE coach_students (
     UNIQUE KEY uk_coach_student (coach_id, student_id),
     CONSTRAINT fk_cs_coach FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_cs_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE coach_achievements (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    coach_id BIGINT NOT NULL,
+    event_name VARCHAR(255) NOT NULL,
+    event_date DATE NOT NULL,
+    distance_km DECIMAL(6,2),
+    result_time VARCHAR(10),
+    position INT,
+    is_verified BOOLEAN DEFAULT FALSE,
+    verified_by BIGINT,
+    verified_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_ca_coach (coach_id),
+    CONSTRAINT fk_ca_coach FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ca_verifier FOREIGN KEY (verified_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE coach_ratings (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    coach_id BIGINT NOT NULL,
+    student_id BIGINT NOT NULL,
+    rating INT NOT NULL,
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_coach_student_rating (coach_id, student_id),
+    INDEX idx_cr_coach (coach_id),
+    CONSTRAINT fk_cr_coach FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cr_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE assigned_workouts (
