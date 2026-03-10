@@ -76,6 +76,78 @@ type WorkoutSegment struct {
 	RestIntensity     string  `json:"rest_intensity"`
 }
 
+type CoachAchievement struct {
+	ID         int64     `json:"id"`
+	CoachID    int64     `json:"coach_id"`
+	EventName  string    `json:"event_name"`
+	EventDate  string    `json:"event_date"`
+	DistanceKm float64   `json:"distance_km"`
+	ResultTime string    `json:"result_time"`
+	Position   int       `json:"position"`
+	IsVerified bool      `json:"is_verified"`
+	VerifiedBy int64     `json:"verified_by,omitempty"`
+	VerifiedAt string    `json:"verified_at,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type CreateAchievementRequest struct {
+	EventName  string  `json:"event_name"`
+	EventDate  string  `json:"event_date"`
+	DistanceKm float64 `json:"distance_km"`
+	ResultTime string  `json:"result_time"`
+	Position   int     `json:"position"`
+}
+
+type UpdateAchievementRequest struct {
+	EventName  string  `json:"event_name"`
+	EventDate  string  `json:"event_date"`
+	DistanceKm float64 `json:"distance_km"`
+	ResultTime string  `json:"result_time"`
+	Position   int     `json:"position"`
+}
+
+type CoachRating struct {
+	ID          int64     `json:"id"`
+	CoachID     int64     `json:"coach_id"`
+	StudentID   int64     `json:"student_id"`
+	Rating      int       `json:"rating"`
+	Comment     string    `json:"comment"`
+	StudentName string    `json:"student_name,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type UpsertRatingRequest struct {
+	Rating  int    `json:"rating"`
+	Comment string `json:"comment"`
+}
+
+type UpdateCoachProfileRequest struct {
+	CoachDescription string `json:"coach_description"`
+	CoachPublic      bool   `json:"coach_public"`
+}
+
+type CoachPublicProfile struct {
+	ID               int64              `json:"id"`
+	Name             string             `json:"name"`
+	AvatarURL        string             `json:"avatar_url"`
+	CoachDescription string             `json:"coach_description"`
+	AvgRating        float64            `json:"avg_rating"`
+	RatingCount      int                `json:"rating_count"`
+	Achievements     []CoachAchievement `json:"achievements"`
+	Ratings          []CoachRating      `json:"ratings"`
+}
+
+type CoachListItem struct {
+	ID               int64   `json:"id"`
+	Name             string  `json:"name"`
+	AvatarURL        string  `json:"avatar_url"`
+	CoachDescription string  `json:"coach_description"`
+	AvgRating        float64 `json:"avg_rating"`
+	RatingCount      int     `json:"rating_count"`
+	VerifiedCount    int     `json:"verified_achievements"`
+}
+
 type SegmentRequest struct {
 	SegmentType   string  `json:"segment_type"`
 	Repetitions   int     `json:"repetitions"`

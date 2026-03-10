@@ -121,8 +121,11 @@ type userRow struct {
 	Age       sql.NullInt64  `json:"-"`
 	WeightKg  sql.NullFloat64 `json:"-"`
 	Language  sql.NullString  `json:"-"`
-	IsCoach   sql.NullBool    `json:"-"`
-	CreatedAt time.Time      `json:"created_at"`
+	IsCoach          sql.NullBool    `json:"-"`
+	IsAdmin          sql.NullBool    `json:"-"`
+	CoachDescription sql.NullString  `json:"-"`
+	CoachPublic      sql.NullBool    `json:"-"`
+	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 }
 
@@ -136,9 +139,12 @@ type userJSON struct {
 	Age       int       `json:"age"`
 	WeightKg  float64   `json:"weight_kg"`
 	Language  string    `json:"language"`
-	IsCoach   bool      `json:"is_coach"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	IsCoach          bool      `json:"is_coach"`
+	IsAdmin          bool      `json:"is_admin"`
+	CoachDescription string    `json:"coach_description"`
+	CoachPublic      bool      `json:"coach_public"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func rowToJSON(row userRow) userJSON {
@@ -169,17 +175,26 @@ func rowToJSON(row userRow) userJSON {
 	if row.IsCoach.Valid {
 		u.IsCoach = row.IsCoach.Bool
 	}
+	if row.IsAdmin.Valid {
+		u.IsAdmin = row.IsAdmin.Bool
+	}
+	if row.CoachDescription.Valid {
+		u.CoachDescription = row.CoachDescription.String
+	}
+	if row.CoachPublic.Valid {
+		u.CoachPublic = row.CoachPublic.Bool
+	}
 	return u
 }
 
 func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, error) {
 	var row userRow
 	err := h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, is_admin, coach_description, coach_public, created_at, updated_at
 		FROM users WHERE google_id = ?
 	`, tokenInfo.Sub).Scan(
 		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
-		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.CreatedAt, &row.UpdatedAt,
+		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.CreatedAt, &row.UpdatedAt,
 	)
 
 	if err == nil {
@@ -209,11 +224,11 @@ func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, e
 
 	id, _ := result.LastInsertId()
 	err = h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, is_admin, coach_description, coach_public, created_at, updated_at
 		FROM users WHERE id = ?
 	`, id).Scan(
 		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
-		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.CreatedAt, &row.UpdatedAt,
+		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
