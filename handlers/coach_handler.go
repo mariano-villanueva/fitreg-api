@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -378,11 +379,13 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		dueDateVal = nil
 	}
 
+	log.Printf("Creating assigned workout: coach=%d student=%d title=%s type=%s due=%v", userID, req.StudentID, req.Title, req.Type, dueDateVal)
 	result, err := h.DB.Exec(`
 		INSERT INTO assigned_workouts (coach_id, student_id, title, description, type, distance_km, duration_seconds, notes, due_date)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, userID, req.StudentID, req.Title, req.Description, req.Type, req.DistanceKm, req.DurationSeconds, req.Notes, dueDateVal)
 	if err != nil {
+		log.Printf("ERROR creating assigned workout: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to create assigned workout")
 		return
 	}
@@ -391,6 +394,8 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	// Insert segments
 	for i, seg := range req.Segments {
+		log.Printf("Inserting segment %d: type=%s unit=%s intensity=%s work_unit=%s work_intensity=%s rest_unit=%s rest_intensity=%s",
+			i, seg.SegmentType, seg.Unit, seg.Intensity, seg.WorkUnit, seg.WorkIntensity, seg.RestUnit, seg.RestIntensity)
 		_, err := h.DB.Exec(`
 			INSERT INTO assigned_workout_segments
 				(assigned_workout_id, order_index, segment_type, repetitions, value, unit, intensity,
@@ -399,6 +404,7 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		`, id, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
 			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity)
 		if err != nil {
+			log.Printf("ERROR inserting segment %d: %v", i, err)
 			writeError(w, http.StatusInternalServerError, "Failed to create workout segment")
 			return
 		}
