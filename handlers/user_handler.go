@@ -26,11 +26,11 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 
 	var row userRow
 	err := h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, is_admin, coach_description, coach_public, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE id = ?
 	`, userID).Scan(
 		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
-		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.CreatedAt, &row.UpdatedAt,
+		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "User not found")
@@ -58,8 +58,8 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.DB.Exec(`
-		UPDATE users SET name = ?, sex = ?, age = ?, weight_kg = ?, language = ?, is_coach = ?, updated_at = NOW() WHERE id = ?
-	`, req.Name, req.Sex, req.Age, req.WeightKg, req.Language, req.IsCoach, userID)
+		UPDATE users SET name = ?, sex = ?, birth_date = ?, weight_kg = ?, height_cm = ?, language = ?, is_coach = ?, onboarding_completed = ?, updated_at = NOW() WHERE id = ?
+	`, req.Name, req.Sex, req.BirthDate, req.WeightKg, req.HeightCm, req.Language, req.IsCoach, req.OnboardingCompleted, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to update profile")
 		return
@@ -67,11 +67,11 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	var row userRow
 	err = h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, is_admin, coach_description, coach_public, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE id = ?
 	`, userID).Scan(
 		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
-		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.CreatedAt, &row.UpdatedAt,
+		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to fetch updated profile")
