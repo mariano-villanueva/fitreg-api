@@ -24,18 +24,17 @@ FitRegAPI/
 │   ├── auth_handler.go           # Google login
 │   ├── user_handler.go           # Profile CRUD
 │   ├── workout_handler.go        # Personal workout CRUD
-│   └── coach_handler.go          # Coach/student/assignment endpoints
+│   ├── coach_handler.go          # Coach/student/assignment endpoints
+│   ├── coach_profile_handler.go  # Coach directory & public profile
+│   ├── achievement_handler.go    # Coach achievements CRUD
+│   ├── rating_handler.go         # Student ratings for coaches
+│   └── admin_handler.go          # Admin panel endpoints
 ├── models/
 │   ├── user.go                   # User model
 │   ├── workout.go                # Workout model
-│   └── coach.go                  # Coach, AssignedWorkout, Segment models
+│   └── coach.go                  # Coach, AssignedWorkout, Segment, Achievement, Rating models
 └── migrations/
-    ├── 001_init.sql
-    ├── 002_auth_and_running.sql
-    ├── 003_add_heart_rate.sql
-    ├── 004_add_language.sql
-    ├── 005_coach_system.sql
-    └── 006_workout_segments.sql
+    └── 001_schema.sql            # Consolidated schema (all tables)
 ```
 
 ## Dependencies
@@ -55,9 +54,13 @@ github.com/golang-jwt/jwt/v5 v5.3.1
 | DB_USER | root | MySQL user |
 | DB_PASSWORD | root | MySQL password |
 | DB_NAME | fitreg | Database name |
-| SERVER_PORT | 8080 | HTTP server port |
+| PORT | — | HTTP port (Railway injects this) |
+| SERVER_PORT | 8080 | HTTP port fallback |
 | GOOGLE_CLIENT_ID | — | Google OAuth client ID |
 | JWT_SECRET | — | JWT signing secret |
+| ALLOWED_ORIGINS | localhost:3000,localhost:5173 | Comma-separated CORS origins |
+
+Port resolution order: `PORT` → `SERVER_PORT` → `8080` (for Railway compatibility).
 
 Load with: `export $(cat .env | xargs) && go run main.go`
 
@@ -76,6 +79,9 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 | weight_kg | DECIMAL(5,2) | Nullable |
 | language | VARCHAR(5) DEFAULT 'es' | 'es' or 'en' |
 | is_coach | BOOLEAN DEFAULT FALSE | Enables coach features |
+| is_admin | BOOLEAN DEFAULT FALSE | Enables admin panel access |
+| coach_description | TEXT | Coach bio/description |
+| coach_public | BOOLEAN DEFAULT FALSE | Visible in coach directory |
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
 
@@ -138,6 +144,33 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 | rest_intensity | ENUM('easy','moderate','fast','sprint') | |
 | created_at | TIMESTAMP | |
 
+### coach_achievements
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGINT PK AUTO_INCREMENT | |
+| coach_id | BIGINT FK→users | |
+| event_name | VARCHAR(255) | Race/event name |
+| event_date | DATE | Event date |
+| distance_km | DECIMAL(6,2) | Distance |
+| result_time | VARCHAR(10) | Format: HH:MM:SS |
+| position | INT (nullable) | Finish position |
+| is_verified | BOOLEAN DEFAULT FALSE | Admin-validated |
+| verified_by | BIGINT FK→users (nullable) | Admin who verified |
+| verified_at | TIMESTAMP (nullable) | Verification timestamp |
+| created_at | TIMESTAMP | |
+
+### coach_ratings
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGINT PK AUTO_INCREMENT | |
+| coach_id | BIGINT FK→users | |
+| student_id | BIGINT FK→users | |
+| rating | INT (1-10) | Score |
+| comment | TEXT (nullable) | Optional review text |
+| created_at | TIMESTAMP | |
+| updated_at | TIMESTAMP | |
+| | UNIQUE(coach_id, student_id) | One rating per student per coach |
+
 ## API Endpoints
 
 ### Public
@@ -190,6 +223,46 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 | GET | /api/my-assigned-workouts | Get workouts assigned to me (asc by due_date) |
 | PUT | /api/my-assigned-workouts/{id}/status | Update status `{ status: "completed"/"skipped" }` |
 
+### Coach Directory (JWT required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/coaches | List public coaches with avg rating. Optional `?search=name` |
+| GET | /api/coaches/{id} | Coach public profile (info + achievements + ratings) |
+
+### Coach Profile (JWT + is_coach required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| PUT | /api/coach/profile | Update description & public visibility |
+
+### Coach Achievements (JWT + is_coach required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/coach/achievements | List my achievements |
+| POST | /api/coach/achievements | Create achievement |
+| PUT | /api/coach/achievements/{id} | Edit achievement (blocked if verified) |
+| DELETE | /api/coach/achievements/{id} | Delete achievement |
+
+### Coach Ratings (JWT + student of that coach)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/coaches/{id}/ratings | Create/update rating (upsert via ON DUPLICATE KEY UPDATE) |
+| GET | /api/coaches/{id}/ratings | View coach ratings |
+
+### Admin (JWT + is_admin required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/admin/stats | Platform metrics (user/coach/student/workout counts) |
+| GET | /api/admin/users | List all users with stats |
+| PUT | /api/admin/users/{id} | Update user roles (is_coach, is_admin) |
+| GET | /api/admin/achievements/pending | List unverified achievements |
+| PUT | /api/admin/achievements/{id}/verify | Approve achievement (sets is_verified, verified_by, verified_at) |
+| PUT | /api/admin/achievements/{id}/reject | Delete rejected achievement |
+
 ## Models
 
 ### User
@@ -201,6 +274,9 @@ type User struct {
     WeightKg float64
     Language string  // es, en
     IsCoach bool
+    IsAdmin bool
+    CoachDescription string
+    CoachPublic bool
 }
 ```
 
@@ -247,6 +323,52 @@ type WorkoutSegment struct {
 }
 ```
 
+### CoachAchievement
+```go
+type CoachAchievement struct {
+    ID, CoachID int64
+    EventName string
+    EventDate string
+    DistanceKm float64
+    ResultTime string
+    Position int  // nullable
+    IsVerified bool
+    VerifiedBy int64  // nullable, admin user ID
+    VerifiedAt string  // nullable
+}
+```
+
+### CoachRating
+```go
+type CoachRating struct {
+    ID, CoachID, StudentID int64
+    Rating int  // 1-10
+    Comment string
+    StudentName, StudentAvatar string  // joined from users
+}
+```
+
+### CoachListItem
+```go
+type CoachListItem struct {
+    ID int64
+    Name, AvatarURL, CoachDescription string
+    AvgRating float64
+    AchievementCount int
+}
+```
+
+### CoachPublicProfile
+```go
+type CoachPublicProfile struct {
+    ID int64
+    Name, AvatarURL, CoachDescription string
+    AvgRating float64
+    Achievements []CoachAchievement
+    Ratings []CoachRating
+}
+```
+
 ## Authentication Flow
 
 1. Frontend sends Google ID token to `POST /api/auth/google`
@@ -259,7 +381,7 @@ type WorkoutSegment struct {
 
 Request → CORS → Auth → Handler
 
-- **CORS**: Allows `localhost:3000` and `localhost:5173`, methods GET/POST/PUT/DELETE/OPTIONS
+- **CORS**: Configurable via `ALLOWED_ORIGINS` env var (comma-separated). Defaults to `localhost:3000` and `localhost:5173`. Methods: GET/POST/PUT/DELETE/OPTIONS
 - **Auth**: Skips `/health` and `/api/auth/*`, validates JWT, injects user_id into context
 
 ## Database Connection Pool
@@ -273,6 +395,21 @@ Request → CORS → Auth → Handler
 - Nullable DB fields use `sql.Null*` types (NullString, NullInt64, NullFloat64)
 - The `exercises` table from migration 001 is unused (replaced by running-specific workouts)
 - Coach endpoints verify `is_coach = true` before processing
+- Admin endpoints verify `is_admin = true` via `requireAdmin` helper
 - Assigned workout edit is blocked if student has marked it `completed`
 - Segments are deleted and re-created on workout update (DELETE + INSERT)
 - `due_date` represents "training day" (not a deadline)
+- Achievement edit is blocked if `is_verified = true`
+- Rating upsert uses `ON DUPLICATE KEY UPDATE` on (coach_id, student_id) unique constraint
+- Rating endpoint validates student is actually a student of the coach via coach_students table
+- Coach directory lists only coaches with `coach_public = true`
+- Config reads `PORT` first (Railway injected), falls back to `SERVER_PORT`, then `8080`
+
+## Deployment
+
+- **Platform:** Railway (Go API + MySQL)
+- **Branch:** `master` (auto-deploy)
+- **Build:** `go build -o main .`
+- **Start:** `./main`
+- Railway injects `PORT` env var automatically
+- MySQL provided as Railway add-on service
