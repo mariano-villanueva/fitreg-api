@@ -22,7 +22,7 @@ func Load() *Config {
 		DBUser:         getEnv("DB_USER", "root"),
 		DBPassword:     getEnv("DB_PASSWORD", ""),
 		DBName:         getEnv("DB_NAME", "fitreg"),
-		ServerPort:     getEnv("SERVER_PORT", "8080"),
+		ServerPort:     getEnvMulti([]string{"PORT", "SERVER_PORT"}, "8080"),
 		GoogleClientID: getEnv("GOOGLE_CLIENT_ID", ""),
 		JWTSecret:      getEnv("JWT_SECRET", "change-me-in-production"),
 	}
@@ -35,6 +35,15 @@ func (c *Config) DSN() string {
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
+	}
+	return fallback
+}
+
+func getEnvMulti(keys []string, fallback string) string {
+	for _, key := range keys {
+		if value, ok := os.LookupEnv(key); ok {
+			return value
+		}
 	}
 	return fallback
 }
