@@ -12,8 +12,11 @@ type User struct {
 	Age       int       `json:"age"`
 	WeightKg  float64   `json:"weight_kg"`
 	Language  string    `json:"language"`
-	IsCoach   bool      `json:"is_coach"`
-	CreatedAt time.Time `json:"created_at"`
+	IsCoach          bool      `json:"is_coach"`
+	IsAdmin          bool      `json:"is_admin"`
+	CoachDescription string    `json:"coach_description"`
+	CoachPublic      bool      `json:"coach_public"`
+	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 

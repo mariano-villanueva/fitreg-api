@@ -26,11 +26,11 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 
 	var row userRow
 	err := h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, is_admin, coach_description, coach_public, created_at, updated_at
 		FROM users WHERE id = ?
 	`, userID).Scan(
 		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
-		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.CreatedAt, &row.UpdatedAt,
+		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "User not found")
@@ -67,11 +67,11 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	var row userRow
 	err = h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, is_admin, coach_description, coach_public, created_at, updated_at
 		FROM users WHERE id = ?
 	`, userID).Scan(
 		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
-		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.CreatedAt, &row.UpdatedAt,
+		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to fetch updated profile")
