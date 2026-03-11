@@ -171,6 +171,10 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	})
 
 	mux.HandleFunc("/api/coach/achievements/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/visibility") {
+			achh.ToggleVisibility(w, r)
+			return
+		}
 		switch r.Method {
 		case http.MethodPut:
 			achh.UpdateAchievement(w, r)

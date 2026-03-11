@@ -196,7 +196,7 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 	}
 
 	rows, err := h.DB.Query(`
-		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, type, notes, created_at, updated_at
+		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
 		FROM workouts
 		WHERE user_id = ?
 		ORDER BY date DESC
@@ -212,7 +212,7 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 		var wo models.Workout
 		var avgPace, workoutType, notes sql.NullString
 		if err := rows.Scan(&wo.ID, &wo.UserID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
-			&avgPace, &wo.Calories, &wo.AvgHeartRate, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
+			&avgPace, &wo.Calories, &wo.AvgHeartRate, &wo.Feeling, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to scan workout")
 			return
 		}

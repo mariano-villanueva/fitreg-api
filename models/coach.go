@@ -106,6 +106,9 @@ type CoachAchievement struct {
 	ResultTime string    `json:"result_time"`
 	Position   int       `json:"position"`
 	ExtraInfo       string `json:"extra_info"`
+	ImageFileID     *int64 `json:"image_file_id"`
+	ImageURL        string `json:"image_url,omitempty"`
+	IsPublic        bool   `json:"is_public"`
 	IsVerified      bool   `json:"is_verified"`
 	RejectionReason string `json:"rejection_reason"`
 	VerifiedBy int64     `json:"verified_by,omitempty"`
@@ -114,21 +117,23 @@ type CoachAchievement struct {
 }
 
 type CreateAchievementRequest struct {
-	EventName  string  `json:"event_name"`
-	EventDate  string  `json:"event_date"`
-	DistanceKm float64 `json:"distance_km"`
-	ResultTime string  `json:"result_time"`
-	Position   int     `json:"position"`
-	ExtraInfo  string  `json:"extra_info"`
+	EventName   string  `json:"event_name"`
+	EventDate   string  `json:"event_date"`
+	DistanceKm  float64 `json:"distance_km"`
+	ResultTime  string  `json:"result_time"`
+	Position    int     `json:"position"`
+	ExtraInfo   string  `json:"extra_info"`
+	ImageFileID *int64  `json:"image_file_id"`
 }
 
 type UpdateAchievementRequest struct {
-	EventName  string  `json:"event_name"`
-	EventDate  string  `json:"event_date"`
-	DistanceKm float64 `json:"distance_km"`
-	ResultTime string  `json:"result_time"`
-	Position   int     `json:"position"`
-	ExtraInfo  string  `json:"extra_info"`
+	EventName   string  `json:"event_name"`
+	EventDate   string  `json:"event_date"`
+	DistanceKm  float64 `json:"distance_km"`
+	ResultTime  string  `json:"result_time"`
+	Position    int     `json:"position"`
+	ExtraInfo   string  `json:"extra_info"`
+	ImageFileID *int64  `json:"image_file_id"`
 }
 
 type CoachRating struct {
@@ -159,6 +164,9 @@ type CoachPublicProfile struct {
 	CoachDescription string             `json:"coach_description"`
 	AvgRating        float64            `json:"avg_rating"`
 	RatingCount      int                `json:"rating_count"`
+	StudentCount             int                `json:"student_count"`
+	VerifiedAchievementCount int                `json:"verified_achievement_count"`
+	IsMyCoach                bool               `json:"is_my_coach"`
 	Achievements     []CoachAchievement `json:"achievements"`
 	Ratings          []CoachRating      `json:"ratings"`
 }
