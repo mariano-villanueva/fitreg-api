@@ -27,15 +27,20 @@ func Auth(jwtSecret string) func(http.Handler) http.Handler {
 				return
 			}
 
+			// Extract token from Authorization header or query param (for <img src>)
+			var tokenString string
 			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, `{"error":"Missing authorization header"}`, http.StatusUnauthorized)
-				return
+			if authHeader != "" {
+				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+				if tokenString == authHeader {
+					http.Error(w, `{"error":"Invalid authorization format"}`, http.StatusUnauthorized)
+					return
+				}
+			} else {
+				tokenString = r.URL.Query().Get("token")
 			}
-
-			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-			if tokenString == authHeader {
-				http.Error(w, `{"error":"Invalid authorization format"}`, http.StatusUnauthorized)
+			if tokenString == "" {
+				http.Error(w, `{"error":"Missing authorization"}`, http.StatusUnauthorized)
 				return
 			}
 
