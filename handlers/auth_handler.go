@@ -216,16 +216,20 @@ func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, e
 
 	if err == nil {
 		// Update name/email/avatar if changed
-		h.DB.Exec(`
+		if _, err := h.DB.Exec(`
 			UPDATE users SET email = ?, name = ?, avatar_url = ?, updated_at = NOW() WHERE google_id = ?
-		`, tokenInfo.Email, tokenInfo.Name, tokenInfo.Picture, tokenInfo.Sub)
+		`, tokenInfo.Email, tokenInfo.Name, tokenInfo.Picture, tokenInfo.Sub); err != nil {
+			logErr("update user on login", err)
+		}
 
 		row.Email = tokenInfo.Email
 		row.Name = tokenInfo.Name
 		row.AvatarURL = sql.NullString{String: tokenInfo.Picture, Valid: tokenInfo.Picture != ""}
 		u := rowToJSON(row)
 		var hasCoach bool
-		_ = h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM coach_students WHERE student_id = ? AND status = 'active')", row.ID).Scan(&hasCoach)
+		if err := h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM coach_students WHERE student_id = ? AND status = 'active')", row.ID).Scan(&hasCoach); err != nil {
+			logErr("check has coach on login", err)
+		}
 		u.HasCoach = hasCoach
 		return &u, nil
 	}
@@ -242,7 +246,10 @@ func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, e
 		return nil, err
 	}
 
-	id, _ := result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		logErr("get last insert id for new user", err)
+	}
 	err = h.DB.QueryRow(`
 		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE id = ?

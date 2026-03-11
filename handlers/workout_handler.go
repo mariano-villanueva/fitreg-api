@@ -3,7 +3,9 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -130,15 +132,20 @@ func (h *WorkoutHandler) CreateWorkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, _ := result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		logErr("get last insert id for workout", err)
+	}
 
 	var wo models.Workout
 	var avgPace, workoutType, notes sql.NullString
-	h.DB.QueryRow(`
+	if err := h.DB.QueryRow(`
 		SELECT id, user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, type, notes, created_at, updated_at
 		FROM workouts WHERE id = ?
 	`, id).Scan(&wo.ID, &wo.UserID, &wo.AssignedWorkoutID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
-		&avgPace, &wo.Calories, &wo.AvgHeartRate, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt)
+		&avgPace, &wo.Calories, &wo.AvgHeartRate, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
+		logErr("fetch created workout", err)
+	}
 	if avgPace.Valid {
 		wo.AvgPace = avgPace.String
 	}
@@ -180,7 +187,10 @@ func (h *WorkoutHandler) UpdateWorkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logErr("get rows affected for update workout", err)
+	}
 	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "Workout not found")
 		return
@@ -188,11 +198,13 @@ func (h *WorkoutHandler) UpdateWorkout(w http.ResponseWriter, r *http.Request) {
 
 	var wo models.Workout
 	var avgPace, workoutType, notes sql.NullString
-	h.DB.QueryRow(`
+	if err := h.DB.QueryRow(`
 		SELECT id, user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, type, notes, created_at, updated_at
 		FROM workouts WHERE id = ?
 	`, id).Scan(&wo.ID, &wo.UserID, &wo.AssignedWorkoutID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
-		&avgPace, &wo.Calories, &wo.AvgHeartRate, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt)
+		&avgPace, &wo.Calories, &wo.AvgHeartRate, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
+		logErr("fetch updated workout", err)
+	}
 	if avgPace.Valid {
 		wo.AvgPace = avgPace.String
 	}
@@ -225,7 +237,10 @@ func (h *WorkoutHandler) DeleteWorkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logErr("get rows affected for delete workout", err)
+	}
 	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "Workout not found")
 		return
@@ -257,5 +272,19 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
+	if status >= 500 {
+		_, file, line, _ := runtime.Caller(1)
+		log.Printf("ERROR [%s:%d] %d: %s", file, line, status, message)
+	}
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+// logErr logs an error with caller context. Use for errors that are handled
+// but should be visible in logs for debugging.
+func logErr(context string, err error) {
+	if err == nil {
+		return
+	}
+	_, file, line, _ := runtime.Caller(1)
+	log.Printf("ERROR [%s:%d] %s: %v", file, line, context, err)
 }

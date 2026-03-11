@@ -33,10 +33,18 @@ func (h *AdminHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var totalUsers, totalCoaches, totalRatings, pendingAchievements int
-	h.DB.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers)
-	h.DB.QueryRow("SELECT COUNT(*) FROM users WHERE is_coach = TRUE").Scan(&totalCoaches)
-	h.DB.QueryRow("SELECT COUNT(*) FROM coach_ratings").Scan(&totalRatings)
-	h.DB.QueryRow("SELECT COUNT(*) FROM coach_achievements WHERE is_verified = FALSE").Scan(&pendingAchievements)
+	if err := h.DB.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalUsers); err != nil {
+		logErr("count total users", err)
+	}
+	if err := h.DB.QueryRow("SELECT COUNT(*) FROM users WHERE is_coach = TRUE").Scan(&totalCoaches); err != nil {
+		logErr("count total coaches", err)
+	}
+	if err := h.DB.QueryRow("SELECT COUNT(*) FROM coach_ratings").Scan(&totalRatings); err != nil {
+		logErr("count total ratings", err)
+	}
+	if err := h.DB.QueryRow("SELECT COUNT(*) FROM coach_achievements WHERE is_verified = FALSE").Scan(&pendingAchievements); err != nil {
+		logErr("count pending achievements", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]int{
 		"total_users":          totalUsers,
@@ -79,6 +87,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		var u AdminUser
 		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL,
 			&u.IsCoach, &u.IsAdmin, &u.CreatedAt); err != nil {
+			logErr("scan admin user row", err)
 			continue
 		}
 		users = append(users, u)
@@ -110,10 +119,14 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.IsCoach != nil {
-		h.DB.Exec("UPDATE users SET is_coach = ?, updated_at = NOW() WHERE id = ?", *req.IsCoach, targetID)
+		if _, err := h.DB.Exec("UPDATE users SET is_coach = ?, updated_at = NOW() WHERE id = ?", *req.IsCoach, targetID); err != nil {
+			logErr("admin update user is_coach", err)
+		}
 	}
 	if req.IsAdmin != nil {
-		h.DB.Exec("UPDATE users SET is_admin = ?, updated_at = NOW() WHERE id = ?", *req.IsAdmin, targetID)
+		if _, err := h.DB.Exec("UPDATE users SET is_admin = ?, updated_at = NOW() WHERE id = ?", *req.IsAdmin, targetID); err != nil {
+			logErr("admin update user is_admin", err)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "User updated"})
@@ -158,6 +171,7 @@ func (h *AdminHandler) PendingAchievements(w http.ResponseWriter, r *http.Reques
 		var a PendingAchievement
 		if err := rows.Scan(&a.ID, &a.CoachID, &a.EventName, &a.EventDate,
 			&a.DistanceKm, &a.ResultTime, &a.Position, &a.CreatedAt, &a.CoachName); err != nil {
+			logErr("scan pending achievement row", err)
 			continue
 		}
 		achievements = append(achievements, a)
@@ -190,7 +204,10 @@ func (h *AdminHandler) VerifyAchievement(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logErr("get rows affected for verify achievement", err)
+	}
 	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "Achievement not found or already verified")
 		return
@@ -199,7 +216,9 @@ func (h *AdminHandler) VerifyAchievement(w http.ResponseWriter, r *http.Request)
 	// Notify coach about verified achievement
 	var coachID int64
 	var eventName string
-	h.DB.QueryRow("SELECT coach_id, event_name FROM coach_achievements WHERE id = ?", achID).Scan(&coachID, &eventName)
+	if err := h.DB.QueryRow("SELECT coach_id, event_name FROM coach_achievements WHERE id = ?", achID).Scan(&coachID, &eventName); err != nil {
+		logErr("fetch achievement for verification notification", err)
+	}
 	meta := map[string]interface{}{"achievement_id": achID, "event_name": eventName}
 	h.Notification.CreateNotification(coachID, "achievement_verified", "notif_achievement_verified_title", "notif_achievement_verified_body", meta, nil)
 
@@ -226,7 +245,10 @@ func (h *AdminHandler) RejectAchievement(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logErr("get rows affected for reject achievement", err)
+	}
 	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "Achievement not found or already verified")
 		return

@@ -79,14 +79,16 @@ func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request
 		args = append(args, "%"+locality+"%")
 	}
 	if level != "" {
-		where += " AND u.coach_level = ?"
+		where += " AND FIND_IN_SET(?, u.coach_level) > 0"
 		args = append(args, level)
 	}
 
 	// Count total
 	var total int
 	countQuery := "SELECT COUNT(DISTINCT u.id) FROM users u " + where
-	h.DB.QueryRow(countQuery, args...).Scan(&total)
+	if err := h.DB.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		logErr("count coaches", err)
+	}
 
 	query := `
 		SELECT u.id, u.name, COALESCE(u.avatar_url, '') as avatar_url,
@@ -118,6 +120,7 @@ func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request
 		if err := rows.Scan(&c.ID, &c.Name, &c.AvatarURL, &c.CoachDescription,
 			&c.CoachLocality, &c.CoachLevel,
 			&c.AvgRating, &c.RatingCount, &c.VerifiedCount); err != nil {
+			logErr("scan coach list row", err)
 			continue
 		}
 		coaches = append(coaches, c)
@@ -180,6 +183,7 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 			if err := achRows.Scan(&a.ID, &a.CoachID, &a.EventName, &a.EventDate,
 				&a.DistanceKm, &a.ResultTime, &a.Position, &a.IsVerified,
 				&a.VerifiedBy, &verifiedAt, &a.CreatedAt); err != nil {
+				logErr("scan coach achievement row", err)
 				continue
 			}
 			if verifiedAt.Valid {
@@ -206,6 +210,7 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 			var rt models.CoachRating
 			if err := ratRows.Scan(&rt.ID, &rt.CoachID, &rt.StudentID, &rt.Rating,
 				&rt.Comment, &rt.StudentName, &rt.CreatedAt, &rt.UpdatedAt); err != nil {
+				logErr("scan coach rating row", err)
 				continue
 			}
 			profile.Ratings = append(profile.Ratings, rt)

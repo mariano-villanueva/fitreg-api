@@ -67,7 +67,9 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 	// Validate type-specific rules
 	if req.Type == "coach_invite" {
 		var isCoach bool
-		h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach)
+		if err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach); err != nil {
+			logErr("check is coach for invitation", err)
+		}
 		if !isCoach {
 			writeError(w, http.StatusBadRequest, "Cannot send invitation")
 			return
@@ -84,12 +86,14 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 
 	// Check no pending invitation exists between these users (either direction)
 	var pendingCount int
-	h.DB.QueryRow(`
+	if err := h.DB.QueryRow(`
 		SELECT COUNT(*) FROM invitations
 		WHERE status = 'pending' AND (
 			(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
 		)
-	`, userID, receiverID, receiverID, userID).Scan(&pendingCount)
+	`, userID, receiverID, receiverID, userID).Scan(&pendingCount); err != nil {
+		logErr("check pending invitations count", err)
+	}
 	if pendingCount > 0 {
 		writeError(w, http.StatusBadRequest, "Cannot send invitation")
 		return
@@ -97,12 +101,14 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 
 	// Check no active relationship exists
 	var activeCount int
-	h.DB.QueryRow(`
+	if err := h.DB.QueryRow(`
 		SELECT COUNT(*) FROM coach_students
 		WHERE status = 'active' AND (
 			(coach_id = ? AND student_id = ?) OR (coach_id = ? AND student_id = ?)
 		)
-	`, userID, receiverID, receiverID, userID).Scan(&activeCount)
+	`, userID, receiverID, receiverID, userID).Scan(&activeCount); err != nil {
+		logErr("check active relationships count", err)
+	}
 	if activeCount > 0 {
 		writeError(w, http.StatusBadRequest, "Cannot send invitation")
 		return
@@ -116,7 +122,9 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 		studentID = userID
 	}
 	var studentCoachCount int
-	h.DB.QueryRow("SELECT COUNT(*) FROM coach_students WHERE student_id = ? AND status = 'active'", studentID).Scan(&studentCoachCount)
+	if err := h.DB.QueryRow("SELECT COUNT(*) FROM coach_students WHERE student_id = ? AND status = 'active'", studentID).Scan(&studentCoachCount); err != nil {
+		logErr("check student coach count", err)
+	}
 	if studentCoachCount >= models.MaxCoachesPerStudent {
 		writeError(w, http.StatusBadRequest, "Cannot send invitation")
 		return
@@ -132,11 +140,16 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "Failed to create invitation")
 		return
 	}
-	invID, _ := result.LastInsertId()
+	invID, err := result.LastInsertId()
+	if err != nil {
+		logErr("get last insert id for invitation", err)
+	}
 
 	// Create notification for receiver
 	var senderName, senderAvatar string
-	h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(avatar_url, '') FROM users WHERE id = ?", userID).Scan(&senderName, &senderAvatar)
+	if err := h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(avatar_url, '') FROM users WHERE id = ?", userID).Scan(&senderName, &senderAvatar); err != nil {
+		logErr("fetch sender info for invitation notification", err)
+	}
 
 	meta := map[string]interface{}{
 		"invitation_id": invID,
@@ -161,7 +174,7 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 
 	// Return created invitation
 	var inv models.Invitation
-	h.DB.QueryRow(`
+	if err := h.DB.QueryRow(`
 		SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
 			COALESCE(s.name, ''), COALESCE(s.avatar_url, ''), COALESCE(rv.name, ''), COALESCE(rv.avatar_url, '')
 		FROM invitations i
@@ -169,7 +182,9 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 		JOIN users rv ON rv.id = i.receiver_id
 		WHERE i.id = ?
 	`, invID).Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
-		&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar)
+		&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar); err != nil {
+		logErr("fetch created invitation", err)
+	}
 
 	writeJSON(w, http.StatusCreated, inv)
 }
@@ -343,10 +358,12 @@ func (h *InvitationHandler) RespondInvitation(w http.ResponseWriter, r *http.Req
 	}
 
 	// Nullify actions on related notification
-	h.DB.Exec(`
+	if _, err := h.DB.Exec(`
 		UPDATE notifications SET actions = NULL
 		WHERE type = 'invitation_received' AND user_id = ? AND JSON_EXTRACT(metadata, '$.invitation_id') = ?
-	`, userID, invID)
+	`, userID, invID); err != nil {
+		logErr("nullify invitation notification actions", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Invitation " + req.Action})
 }
@@ -371,6 +388,10 @@ func (h *InvitationHandler) CancelInvitation(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusNotFound, "Invitation not found")
 		return
 	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to fetch invitation")
+		return
+	}
 	if senderID != userID && !h.isAdmin(userID) {
 		writeError(w, http.StatusForbidden, "Only the sender can cancel")
 		return
@@ -380,13 +401,17 @@ func (h *InvitationHandler) CancelInvitation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.DB.Exec("UPDATE invitations SET status = 'cancelled', updated_at = NOW() WHERE id = ?", invID)
+	if _, err := h.DB.Exec("UPDATE invitations SET status = 'cancelled', updated_at = NOW() WHERE id = ?", invID); err != nil {
+		logErr("cancel invitation update", err)
+	}
 
 	// Nullify actions and mark as read on related notification
-	h.DB.Exec(`
+	if _, err := h.DB.Exec(`
 		UPDATE notifications SET actions = NULL, body = 'invitation_cancelled', is_read = TRUE
 		WHERE type = 'invitation_received' AND user_id = ? AND JSON_EXTRACT(metadata, '$.invitation_id') = ?
-	`, receiverID, invID)
+	`, receiverID, invID); err != nil {
+		logErr("nullify cancelled invitation notification", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Invitation cancelled"})
 }

@@ -94,6 +94,7 @@ func (h *RatingHandler) GetRatings(w http.ResponseWriter, r *http.Request) {
 		var rt models.CoachRating
 		if err := rows.Scan(&rt.ID, &rt.CoachID, &rt.StudentID, &rt.Rating,
 			&rt.Comment, &rt.StudentName, &rt.CreatedAt, &rt.UpdatedAt); err != nil {
+			logErr("scan rating row", err)
 			continue
 		}
 		ratings = append(ratings, rt)
