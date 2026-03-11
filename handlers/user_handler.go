@@ -43,7 +43,11 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, rowToJSON(row))
+	u := rowToJSON(row)
+	var hasCoach bool
+	_ = h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM coach_students WHERE student_id = ? AND status = 'active')", userID).Scan(&hasCoach)
+	u.HasCoach = hasCoach
+	writeJSON(w, http.StatusOK, u)
 }
 
 func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {

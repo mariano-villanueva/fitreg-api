@@ -151,6 +151,7 @@ type userJSON struct {
 	CoachDescription    string    `json:"coach_description"`
 	CoachPublic         bool      `json:"coach_public"`
 	OnboardingCompleted bool      `json:"onboarding_completed"`
+	HasCoach            bool      `json:"has_coach"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -223,6 +224,9 @@ func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, e
 		row.Name = tokenInfo.Name
 		row.AvatarURL = sql.NullString{String: tokenInfo.Picture, Valid: tokenInfo.Picture != ""}
 		u := rowToJSON(row)
+		var hasCoach bool
+		_ = h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM coach_students WHERE student_id = ? AND status = 'active')", row.ID).Scan(&hasCoach)
+		u.HasCoach = hasCoach
 		return &u, nil
 	}
 
