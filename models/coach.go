@@ -31,6 +31,7 @@ type AssignedWorkout struct {
 	ResultDistanceKm  *float64         `json:"result_distance_km"`
 	ResultHeartRate   *int             `json:"result_heart_rate"`
 	ResultFeeling     *int             `json:"result_feeling"`
+	ImageFileID       *int64           `json:"image_file_id"`
 	Status            string           `json:"status"`
 	DueDate           string           `json:"due_date"`
 	CreatedAt         time.Time        `json:"created_at"`
@@ -38,6 +39,7 @@ type AssignedWorkout struct {
 	StudentName       string           `json:"student_name,omitempty"`
 	CoachName         string           `json:"coach_name,omitempty"`
 	Segments          []WorkoutSegment `json:"segments"`
+	ImageURL          string           `json:"image_url,omitempty"`
 }
 
 type AddStudentRequest struct {
@@ -75,6 +77,7 @@ type UpdateAssignedWorkoutStatusRequest struct {
 	ResultDistanceKm  *float64 `json:"result_distance_km"`
 	ResultHeartRate   *int     `json:"result_heart_rate"`
 	ResultFeeling     *int     `json:"result_feeling"`
+	ImageFileID       *int64   `json:"image_file_id"`
 }
 
 type WorkoutSegment struct {
