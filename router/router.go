@@ -13,13 +13,15 @@ func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
 	mux := http.NewServeMux()
 
 	ah := handlers.NewAuthHandler(db, googleClientID, jwtSecret)
-	uh := handlers.NewUserHandler(db)
+	nh := handlers.NewNotificationHandler(db)
+	uh := handlers.NewUserHandler(db, nh)
 	wh := handlers.NewWorkoutHandler(db)
-	ch := handlers.NewCoachHandler(db)
+	ih := handlers.NewInvitationHandler(db, nh)
+	ch := handlers.NewCoachHandler(db, nh)
 	cph := handlers.NewCoachProfileHandler(db)
 	achh := handlers.NewAchievementHandler(db)
 	rth := handlers.NewRatingHandler(db)
-	adm := handlers.NewAdminHandler(db)
+	adm := handlers.NewAdminHandler(db, nh)
 
 	// Auth routes (public)
 	mux.HandleFunc("/api/auth/google", func(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +69,18 @@ func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
 		}
 	})
 
+	// Coach request routes
+	mux.HandleFunc("/api/coach-request", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			uh.GetCoachRequestStatus(w, r)
+		case http.MethodPost:
+			uh.RequestCoach(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
 	// Coach student routes
 	mux.HandleFunc("/api/coach/students", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -88,11 +102,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
 			}
 			return
 		}
-		if r.Method == http.MethodDelete {
-			ch.RemoveStudent(w, r)
-		} else {
-			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
-		}
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 	})
 
 	// Coach assigned workouts routes
@@ -242,6 +252,107 @@ func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
+	})
+
+	// Invitation routes
+	mux.HandleFunc("/api/invitations", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			ih.ListInvitations(w, r)
+		case http.MethodPost:
+			ih.CreateInvitation(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/invitations/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/respond") {
+			if r.Method == http.MethodPut {
+				ih.RespondInvitation(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			ih.GetInvitation(w, r)
+		case http.MethodDelete:
+			ih.CancelInvitation(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Notification routes
+	mux.HandleFunc("/api/notifications", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			nh.ListNotifications(w, r)
+		} else {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/notifications/unread-count", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			nh.UnreadCount(w, r)
+		} else {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/notifications/read-all", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			nh.MarkAllRead(w, r)
+		} else {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/notifications/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/action") {
+			if r.Method == http.MethodPost {
+				nh.ExecuteAction(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/read") {
+			if r.Method == http.MethodPut {
+				nh.MarkRead(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+	})
+
+	// Notification preferences routes
+	mux.HandleFunc("/api/notification-preferences", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			nh.GetPreferences(w, r)
+		case http.MethodPut:
+			nh.UpdatePreferences(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Coach-student relationship routes
+	mux.HandleFunc("/api/coach-students/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/end") {
+			if r.Method == http.MethodPut {
+				ch.EndRelationship(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 	})
 
 	// Health check (public)

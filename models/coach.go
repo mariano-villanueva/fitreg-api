@@ -1,31 +1,43 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type CoachStudent struct {
-	ID        int64     `json:"id"`
-	CoachID   int64     `json:"coach_id"`
-	StudentID int64     `json:"student_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           int64      `json:"id"`
+	CoachID      int64      `json:"coach_id"`
+	StudentID    int64      `json:"student_id"`
+	InvitationID int64      `json:"invitation_id,omitempty"`
+	Status       string     `json:"status"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 type AssignedWorkout struct {
-	ID              int64     `json:"id"`
-	CoachID         int64     `json:"coach_id"`
-	StudentID       int64     `json:"student_id"`
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	Type            string    `json:"type"`
-	DistanceKm      float64   `json:"distance_km"`
-	DurationSeconds int       `json:"duration_seconds"`
-	Notes           string    `json:"notes"`
-	Status          string    `json:"status"`
-	DueDate         string    `json:"due_date"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	StudentName     string             `json:"student_name,omitempty"`
-	CoachName       string             `json:"coach_name,omitempty"`
-	Segments        []WorkoutSegment   `json:"segments"`
+	ID                int64            `json:"id"`
+	CoachID           int64            `json:"coach_id"`
+	StudentID         int64            `json:"student_id"`
+	Title             string           `json:"title"`
+	Description       string           `json:"description"`
+	Type              string           `json:"type"`
+	DistanceKm        float64          `json:"distance_km"`
+	DurationSeconds   int              `json:"duration_seconds"`
+	Notes             string           `json:"notes"`
+	ExpectedFields    json.RawMessage  `json:"expected_fields"`
+	ResultTimeSeconds *int             `json:"result_time_seconds"`
+	ResultDistanceKm  *float64         `json:"result_distance_km"`
+	ResultHeartRate   *int             `json:"result_heart_rate"`
+	ResultFeeling     *int             `json:"result_feeling"`
+	Status            string           `json:"status"`
+	DueDate           string           `json:"due_date"`
+	CreatedAt         time.Time        `json:"created_at"`
+	UpdatedAt         time.Time        `json:"updated_at"`
+	StudentName       string           `json:"student_name,omitempty"`
+	CoachName         string           `json:"coach_name,omitempty"`
+	Segments          []WorkoutSegment `json:"segments"`
 }
 
 type AddStudentRequest struct {
@@ -33,13 +45,14 @@ type AddStudentRequest struct {
 }
 
 type CreateAssignedWorkoutRequest struct {
-	StudentID       int64   `json:"student_id"`
-	Title           string  `json:"title"`
-	Description     string  `json:"description"`
-	Type            string  `json:"type"`
-	DistanceKm      float64 `json:"distance_km"`
-	DurationSeconds int     `json:"duration_seconds"`
+	StudentID       int64            `json:"student_id"`
+	Title           string           `json:"title"`
+	Description     string           `json:"description"`
+	Type            string           `json:"type"`
+	DistanceKm      float64          `json:"distance_km"`
+	DurationSeconds int              `json:"duration_seconds"`
 	Notes           string           `json:"notes"`
+	ExpectedFields  []string         `json:"expected_fields"`
 	DueDate         string           `json:"due_date"`
 	Segments        []SegmentRequest `json:"segments"`
 }
@@ -51,12 +64,17 @@ type UpdateAssignedWorkoutRequest struct {
 	DistanceKm      float64          `json:"distance_km"`
 	DurationSeconds int              `json:"duration_seconds"`
 	Notes           string           `json:"notes"`
+	ExpectedFields  []string         `json:"expected_fields"`
 	DueDate         string           `json:"due_date"`
 	Segments        []SegmentRequest `json:"segments"`
 }
 
 type UpdateAssignedWorkoutStatusRequest struct {
-	Status string `json:"status"`
+	Status            string   `json:"status"`
+	ResultTimeSeconds *int     `json:"result_time_seconds"`
+	ResultDistanceKm  *float64 `json:"result_distance_km"`
+	ResultHeartRate   *int     `json:"result_heart_rate"`
+	ResultFeeling     *int     `json:"result_feeling"`
 }
 
 type WorkoutSegment struct {
@@ -143,6 +161,8 @@ type CoachListItem struct {
 	Name             string  `json:"name"`
 	AvatarURL        string  `json:"avatar_url"`
 	CoachDescription string  `json:"coach_description"`
+	CoachLocality    string  `json:"coach_locality"`
+	CoachLevel       string  `json:"coach_level"`
 	AvgRating        float64 `json:"avg_rating"`
 	RatingCount      int     `json:"rating_count"`
 	VerifiedCount    int     `json:"verified_achievements"`

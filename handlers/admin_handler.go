@@ -11,11 +11,12 @@ import (
 )
 
 type AdminHandler struct {
-	DB *sql.DB
+	DB           *sql.DB
+	Notification *NotificationHandler
 }
 
-func NewAdminHandler(db *sql.DB) *AdminHandler {
-	return &AdminHandler{DB: db}
+func NewAdminHandler(db *sql.DB, nh *NotificationHandler) *AdminHandler {
+	return &AdminHandler{DB: db, Notification: nh}
 }
 
 func (h *AdminHandler) requireAdmin(userID int64) bool {
@@ -194,6 +195,13 @@ func (h *AdminHandler) VerifyAchievement(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "Achievement not found or already verified")
 		return
 	}
+
+	// Notify coach about verified achievement
+	var coachID int64
+	var eventName string
+	h.DB.QueryRow("SELECT coach_id, event_name FROM coach_achievements WHERE id = ?", achID).Scan(&coachID, &eventName)
+	meta := map[string]interface{}{"achievement_id": achID, "event_name": eventName}
+	h.Notification.CreateNotification(coachID, "achievement_verified", "notif_achievement_verified_title", "notif_achievement_verified_body", meta, nil)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Achievement verified"})
 }

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
+	"github.com/fitreg/api/models"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -70,6 +72,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	// Find or create user
 	user, err := h.findOrCreateUser(tokenInfo)
 	if err != nil {
+		log.Printf("ERROR findOrCreateUser: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to process user")
 		return
 	}
@@ -112,39 +115,44 @@ func (h *AuthHandler) verifyGoogleToken(idToken string) (*GoogleTokenInfo, error
 }
 
 type userRow struct {
-	ID        int64          `json:"id"`
-	GoogleID  string         `json:"google_id"`
-	Email     string         `json:"email"`
-	Name      string         `json:"name"`
-	AvatarURL sql.NullString `json:"-"`
-	Sex       sql.NullString `json:"-"`
-	Age       sql.NullInt64  `json:"-"`
-	WeightKg  sql.NullFloat64 `json:"-"`
-	Language  sql.NullString  `json:"-"`
-	IsCoach          sql.NullBool    `json:"-"`
-	IsAdmin          sql.NullBool    `json:"-"`
-	CoachDescription sql.NullString  `json:"-"`
-	CoachPublic      sql.NullBool    `json:"-"`
-	CreatedAt        time.Time       `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID                  int64           `json:"id"`
+	GoogleID            string          `json:"google_id"`
+	Email               string          `json:"email"`
+	Name                string          `json:"name"`
+	AvatarURL           sql.NullString  `json:"-"`
+	Sex                 sql.NullString  `json:"-"`
+	BirthDate           sql.NullString  `json:"-"`
+	WeightKg            sql.NullFloat64 `json:"-"`
+	HeightCm            sql.NullInt64   `json:"-"`
+	Language            sql.NullString  `json:"-"`
+	IsCoach             sql.NullBool    `json:"-"`
+	IsAdmin             sql.NullBool    `json:"-"`
+	CoachDescription    sql.NullString  `json:"-"`
+	CoachPublic         sql.NullBool    `json:"-"`
+	OnboardingCompleted sql.NullBool    `json:"-"`
+	CreatedAt           time.Time       `json:"created_at"`
+	UpdatedAt           time.Time       `json:"updated_at"`
 }
 
 type userJSON struct {
-	ID        int64     `json:"id"`
-	GoogleID  string    `json:"google_id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	AvatarURL string    `json:"avatar_url"`
-	Sex       string    `json:"sex"`
-	Age       int       `json:"age"`
-	WeightKg  float64   `json:"weight_kg"`
-	Language  string    `json:"language"`
-	IsCoach          bool      `json:"is_coach"`
-	IsAdmin          bool      `json:"is_admin"`
-	CoachDescription string    `json:"coach_description"`
-	CoachPublic      bool      `json:"coach_public"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                  int64     `json:"id"`
+	GoogleID            string    `json:"google_id"`
+	Email               string    `json:"email"`
+	Name                string    `json:"name"`
+	AvatarURL           string    `json:"avatar_url"`
+	Sex                 string    `json:"sex"`
+	BirthDate           string    `json:"birth_date"`
+	Age                 int       `json:"age"`
+	WeightKg            float64   `json:"weight_kg"`
+	HeightCm            int       `json:"height_cm"`
+	Language            string    `json:"language"`
+	IsCoach             bool      `json:"is_coach"`
+	IsAdmin             bool      `json:"is_admin"`
+	CoachDescription    string    `json:"coach_description"`
+	CoachPublic         bool      `json:"coach_public"`
+	OnboardingCompleted bool      `json:"onboarding_completed"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 func rowToJSON(row userRow) userJSON {
@@ -163,11 +171,16 @@ func rowToJSON(row userRow) userJSON {
 	if row.Sex.Valid {
 		u.Sex = row.Sex.String
 	}
-	if row.Age.Valid {
-		u.Age = int(row.Age.Int64)
+	if row.BirthDate.Valid {
+		bd := truncateDate(row.BirthDate.String)
+		u.BirthDate = bd
+		u.Age = models.CalculateAge(bd)
 	}
 	if row.WeightKg.Valid {
 		u.WeightKg = row.WeightKg.Float64
+	}
+	if row.HeightCm.Valid {
+		u.HeightCm = int(row.HeightCm.Int64)
 	}
 	if row.Language.Valid {
 		u.Language = row.Language.String
@@ -184,17 +197,20 @@ func rowToJSON(row userRow) userJSON {
 	if row.CoachPublic.Valid {
 		u.CoachPublic = row.CoachPublic.Bool
 	}
+	if row.OnboardingCompleted.Valid {
+		u.OnboardingCompleted = row.OnboardingCompleted.Bool
+	}
 	return u
 }
 
 func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, error) {
 	var row userRow
 	err := h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, is_admin, coach_description, coach_public, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE google_id = ?
 	`, tokenInfo.Sub).Scan(
 		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
-		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.CreatedAt, &row.UpdatedAt,
+		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
 	)
 
 	if err == nil {
@@ -224,11 +240,11 @@ func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, e
 
 	id, _ := result.LastInsertId()
 	err = h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, age, weight_kg, language, is_coach, is_admin, coach_description, coach_public, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE id = ?
 	`, id).Scan(
 		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
-		&row.Sex, &row.Age, &row.WeightKg, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.CreatedAt, &row.UpdatedAt,
+		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
