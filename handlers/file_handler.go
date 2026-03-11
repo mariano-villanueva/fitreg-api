@@ -145,7 +145,9 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", f.ContentType)
 	w.Header().Set("Content-Disposition", "inline")
 	w.Header().Set("Cache-Control", "private, max-age=86400")
-	io.Copy(w, reader)
+	if _, err := io.Copy(w, reader); err != nil {
+		log.Printf("ERROR streaming file %s: %v", uuid, err)
+	}
 }
 
 // Delete handles DELETE /api/files/{uuid}
@@ -203,7 +205,9 @@ func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func generateUUID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		log.Printf("ERROR generating UUID: %v", err)
+	}
 	b[6] = (b[6] & 0x0f) | 0x40 // version 4
 	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
 	h := fmt.Sprintf("%x", b)

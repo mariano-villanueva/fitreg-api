@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // LocalStorage stores files on the local filesystem. For development only.
@@ -20,8 +21,19 @@ func NewLocalStorage(basePath string) (*LocalStorage, error) {
 	return &LocalStorage{BasePath: basePath}, nil
 }
 
-func (s *LocalStorage) Upload(_ context.Context, key string, data io.Reader, _ string) error {
+func (s *LocalStorage) safePath(key string) (string, error) {
 	fullPath := filepath.Join(s.BasePath, key)
+	if !strings.HasPrefix(filepath.Clean(fullPath), filepath.Clean(s.BasePath)+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid storage key")
+	}
+	return fullPath, nil
+}
+
+func (s *LocalStorage) Upload(_ context.Context, key string, data io.Reader, _ string) error {
+	fullPath, err := s.safePath(key)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return fmt.Errorf("create dir: %w", err)
 	}
@@ -37,7 +49,10 @@ func (s *LocalStorage) Upload(_ context.Context, key string, data io.Reader, _ s
 }
 
 func (s *LocalStorage) Download(_ context.Context, key string) (io.ReadCloser, error) {
-	fullPath := filepath.Join(s.BasePath, key)
+	fullPath, err := s.safePath(key)
+	if err != nil {
+		return nil, err
+	}
 	f, err := os.Open(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
@@ -46,7 +61,10 @@ func (s *LocalStorage) Download(_ context.Context, key string) (io.ReadCloser, e
 }
 
 func (s *LocalStorage) Delete(_ context.Context, key string) error {
-	fullPath := filepath.Join(s.BasePath, key)
+	fullPath, err := s.safePath(key)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete file: %w", err)
 	}
