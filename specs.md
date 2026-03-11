@@ -80,7 +80,7 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 | avatar_url | TEXT | Google profile picture |
 | sex | ENUM('M','F','other') | Nullable |
 | birth_date | DATE | Nullable |
-| age | INT | Nullable (computed from birth_date) |
+| age | — | Computed from birth_date in Go (not a DB column) |
 | weight_kg | DECIMAL(5,2) | Nullable |
 | height_cm | INT | Nullable |
 | language | VARCHAR(5) DEFAULT 'es' | 'es' or 'en' |
@@ -89,7 +89,7 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 | coach_description | TEXT | Coach bio/description |
 | coach_public | BOOLEAN DEFAULT FALSE | Visible in coach directory |
 | coach_locality | VARCHAR(255) | Coach location (set during coach request) |
-| coach_level | ENUM('beginner','intermediate','advanced','competitive') | Training level |
+| coach_level | VARCHAR(255) | Comma-separated training levels (e.g. "beginner,advanced") |
 | onboarding_completed | BOOLEAN DEFAULT FALSE | User completed onboarding |
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
@@ -236,7 +236,7 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/me | Get authenticated user profile |
+| GET | /api/me | Get authenticated user profile (includes `has_coach` field) |
 | PUT | /api/me | Update profile (name, sex, birth_date, weight_kg, height_cm, language). Note: `is_coach` is NOT settable here |
 
 ### Coach Request (JWT required)
@@ -244,13 +244,14 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /api/coach-request | Check coach request status → `{ status: "none" \| "pending" \| "approved" }` |
-| POST | /api/coach-request | Submit coach request `{ locality, level }` → creates notification for all admins |
+| POST | /api/coach-request | Submit coach request `{ locality, level: string[] }` → creates notification for all admins |
 
 Coach activation flow:
-1. User submits request with locality and training level
-2. Notification sent to all admin users with approve/reject actions
-3. Admin approves → user.is_coach = true, all other admin notifications for this request cleared
-4. Admin rejects → notifications cleared, user notified
+1. User submits request with locality and training levels (multiple allowed, e.g. ["beginner","advanced"])
+2. Levels stored as comma-separated string in `coach_level` column
+3. Notification sent to all admin users with approve/reject actions
+4. Admin approves → `is_coach = TRUE, coach_public = TRUE`, all other admin notifications for this request cleared
+5. Admin rejects → notifications cleared, user notified
 
 ### Personal Workouts (JWT required)
 
@@ -323,7 +324,7 @@ Supported action types by notification type:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/coaches | Paginated coach list. Params: `?search=X&locality=X&level=X&sort=rating\|name\|newest\|oldest&page=N&limit=N` → `{ data, total }` |
+| GET | /api/coaches | Paginated coach list. Params: `?search=X&locality=X&level=X&sort=rating\|name\|newest\|oldest&page=N&limit=N` → `{ data, total }`. Level filter uses `FIND_IN_SET` to match within comma-separated levels. |
 | GET | /api/coaches/{id} | Coach public profile (info + achievements + ratings) |
 
 ### Coach Profile (JWT + is_coach required)
@@ -393,8 +394,9 @@ type User struct {
     Sex, BirthDate string; WeightKg float64; HeightCm int
     Language string; IsCoach, IsAdmin bool
     CoachDescription string; CoachPublic bool
-    CoachLocality, CoachLevel string
+    CoachLocality, CoachLevel string  // CoachLevel: comma-separated, e.g. "beginner,advanced"
     OnboardingCompleted bool
+    HasCoach bool  // Computed: true if user has active coach_students record as student
 }
 ```
 
@@ -474,16 +476,28 @@ Request → CORS → Auth → Handler
 - Max idle connections: 5
 - Connection lifetime: 5 minutes
 
+## Error Logging
+
+All handlers use centralized error logging:
+
+- **`writeError(w, status, message)`**: Automatically logs 5xx errors with file:line via `runtime.Caller`. 4xx errors are not logged (expected client errors).
+- **`logErr(context, err)`**: Logs any non-nil error with file:line and a context string. Used for errors that are handled gracefully but need visibility (e.g., silent DB query failures, discarded scan errors).
+
+Both are defined in `workout_handler.go` and shared across all handlers. Format: `ERROR [file:line] context: error`.
+
 ## Key Implementation Notes
 
 - Nullable DB fields use `sql.Null*` types (NullString, NullInt64, NullFloat64)
-- Coach mode requires admin approval — users submit request via `POST /api/coach-request` with locality and level
+- Coach mode requires admin approval — users submit request via `POST /api/coach-request` with locality and level(s)
+- Coach request sends `level` as a JSON array of strings; stored as comma-separated in DB
 - `is_coach` is NOT modifiable via profile update endpoint
 - Coach request creates notifications for ALL admin users; first admin to act resolves all
 - Completing an assignment auto-creates a workout record with `assigned_workout_id` FK
 - `result_feeling` (1-10) is always required when completing an assignment
 - Assigned workout listing supports `?status=pending|finished` filter and `?page=N&limit=N` pagination
-- Coach directory is paginated with search (name + description), locality, level, and sort (rating/name/newest/oldest) filters
+- Coach directory is paginated with search (name + description), locality, level (uses `FIND_IN_SET` for comma-separated matching), and sort (rating/name/newest/oldest) filters
+- `has_coach` is computed at login and profile fetch by checking `coach_students` for an active record as student
+- Approving a coach request sets both `is_coach = TRUE` and `coach_public = TRUE`
 - Notification titles and bodies are i18n keys; metadata provides interpolation values
 - Notification actions (approve/reject) are resolved inline via `POST /api/notifications/{id}/action`
 - Invitation system: coach_invite and student_request types, with transactional accept using `SELECT FOR UPDATE`
