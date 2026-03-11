@@ -156,7 +156,10 @@ func (h *NotificationHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to mark notification as read")
 		return
 	}
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logErr("get rows affected for mark read", err)
+	}
 	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "Notification not found")
 		return
@@ -247,7 +250,9 @@ func (h *NotificationHandler) ExecuteAction(w http.ResponseWriter, r *http.Reque
 			InvitationID int64 `json:"invitation_id"`
 		}
 		if metadata.Valid {
-			json.Unmarshal([]byte(metadata.String), &meta)
+			if err := json.Unmarshal([]byte(metadata.String), &meta); err != nil {
+				logErr("unmarshal invitation metadata", err)
+			}
 		}
 		if meta.InvitationID == 0 {
 			writeError(w, http.StatusInternalServerError, "Missing invitation reference")
@@ -262,7 +267,9 @@ func (h *NotificationHandler) ExecuteAction(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		if invStatus != "pending" {
-			h.DB.Exec("UPDATE notifications SET actions = NULL WHERE id = ?", notifID)
+			if _, err := h.DB.Exec("UPDATE notifications SET actions = NULL WHERE id = ?", notifID); err != nil {
+				logErr("clear actions for non-pending invitation", err)
+			}
 			writeError(w, http.StatusConflict, "Invitation is no longer pending")
 			return
 		}
@@ -283,7 +290,9 @@ func (h *NotificationHandler) ExecuteAction(w http.ResponseWriter, r *http.Reque
 			RequesterName string `json:"requester_name"`
 		}
 		if metadata.Valid {
-			json.Unmarshal([]byte(metadata.String), &meta)
+			if err := json.Unmarshal([]byte(metadata.String), &meta); err != nil {
+				logErr("unmarshal coach request metadata", err)
+			}
 		}
 		if meta.RequesterID == 0 {
 			writeError(w, http.StatusInternalServerError, "Missing requester reference")
@@ -298,11 +307,13 @@ func (h *NotificationHandler) ExecuteAction(w http.ResponseWriter, r *http.Reque
 		}
 
 		// Clear actions on ALL coach_request notifications for this requester
-		h.DB.Exec(`
+		if _, err := h.DB.Exec(`
 			UPDATE notifications SET actions = NULL
 			WHERE type = 'coach_request' AND actions IS NOT NULL
 			AND JSON_EXTRACT(metadata, '$.requester_id') = ?
-		`, meta.RequesterID)
+		`, meta.RequesterID); err != nil {
+			logErr("clear coach request notification actions", err)
+		}
 
 	default:
 		writeError(w, http.StatusBadRequest, "Unsupported notification type for actions")
@@ -310,7 +321,9 @@ func (h *NotificationHandler) ExecuteAction(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Clear actions after execution
-	h.DB.Exec("UPDATE notifications SET actions = NULL WHERE id = ?", notifID)
+	if _, err := h.DB.Exec("UPDATE notifications SET actions = NULL WHERE id = ?", notifID); err != nil {
+		logErr("clear notification actions after execution", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Action executed"})
 }
@@ -344,7 +357,9 @@ func (h *NotificationHandler) acceptInvitation(invitationID, userID int64) error
 
 	// Check MaxCoachesPerStudent
 	var activeCount int
-	tx.QueryRow("SELECT COUNT(*) FROM coach_students WHERE student_id = ? AND status = 'active' FOR UPDATE", studentID).Scan(&activeCount)
+	if err := tx.QueryRow("SELECT COUNT(*) FROM coach_students WHERE student_id = ? AND status = 'active' FOR UPDATE", studentID).Scan(&activeCount); err != nil {
+		logErr("count active coaches for student", err)
+	}
 	if activeCount >= models.MaxCoachesPerStudent {
 		return fmt.Errorf("student has reached the maximum number of coaches (%d)", models.MaxCoachesPerStudent)
 	}
@@ -370,7 +385,9 @@ func (h *NotificationHandler) acceptInvitation(invitationID, userID int64) error
 
 	// Create notification for sender (outside transaction)
 	var acceptorName string
-	h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&acceptorName)
+	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&acceptorName); err != nil {
+		logErr("fetch acceptor name", err)
+	}
 	meta := map[string]interface{}{"invitation_id": invitationID, "user_name": acceptorName}
 	h.CreateNotification(senderID, "invitation_accepted", "notif_invitation_accepted_title", "notif_invitation_accepted_body", meta, nil)
 
@@ -378,20 +395,28 @@ func (h *NotificationHandler) acceptInvitation(invitationID, userID int64) error
 }
 
 func (h *NotificationHandler) rejectInvitation(invitationID, userID int64) {
-	h.DB.Exec("UPDATE invitations SET status = 'rejected', updated_at = NOW() WHERE id = ?", invitationID)
+	if _, err := h.DB.Exec("UPDATE invitations SET status = 'rejected', updated_at = NOW() WHERE id = ?", invitationID); err != nil {
+		logErr("reject invitation update", err)
+	}
 
 	var senderID int64
-	h.DB.QueryRow("SELECT sender_id FROM invitations WHERE id = ?", invitationID).Scan(&senderID)
+	if err := h.DB.QueryRow("SELECT sender_id FROM invitations WHERE id = ?", invitationID).Scan(&senderID); err != nil {
+		logErr("fetch sender id for rejection", err)
+	}
 
 	var userName string
-	h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&userName)
+	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&userName); err != nil {
+		logErr("fetch user name for rejection", err)
+	}
 	meta := map[string]interface{}{"invitation_id": invitationID, "user_name": userName}
 	h.CreateNotification(senderID, "invitation_rejected", "notif_invitation_rejected_title", "notif_invitation_rejected_body", meta, nil)
 }
 
 func (h *NotificationHandler) approveCoachRequest(requesterID int64, requesterName string) {
-	// Set user as coach
-	h.DB.Exec("UPDATE users SET is_coach = TRUE, updated_at = NOW() WHERE id = ?", requesterID)
+	// Set user as coach and make profile public
+	if _, err := h.DB.Exec("UPDATE users SET is_coach = TRUE, coach_public = TRUE, updated_at = NOW() WHERE id = ?", requesterID); err != nil {
+		logErr("approve coach request update", err)
+	}
 
 	// Notify requester
 	meta := map[string]interface{}{"requester_name": requesterName}

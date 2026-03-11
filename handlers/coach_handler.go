@@ -31,6 +31,7 @@ func fetchSegments(db *sql.DB, assignedWorkoutID int64) []models.WorkoutSegment 
 		ORDER BY order_index ASC
 	`, assignedWorkoutID)
 	if err != nil {
+		logErr("fetch segments query", err)
 		return []models.WorkoutSegment{}
 	}
 	defer rows.Close()
@@ -42,6 +43,7 @@ func fetchSegments(db *sql.DB, assignedWorkoutID int64) []models.WorkoutSegment 
 			&s.Repetitions, &s.Value, &s.Unit, &s.Intensity,
 			&s.WorkValue, &s.WorkUnit, &s.WorkIntensity,
 			&s.RestValue, &s.RestUnit, &s.RestIntensity); err != nil {
+			logErr("scan segment row", err)
 			continue
 		}
 		segments = append(segments, s)
@@ -134,7 +136,9 @@ func (h *CoachHandler) EndRelationship(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var isAdmin bool
-	h.DB.QueryRow("SELECT COALESCE(is_admin, FALSE) FROM users WHERE id = ?", userID).Scan(&isAdmin)
+	if err := h.DB.QueryRow("SELECT COALESCE(is_admin, FALSE) FROM users WHERE id = ?", userID).Scan(&isAdmin); err != nil {
+		logErr("check is admin for end relationship", err)
+	}
 
 	if coachID != userID && studentID != userID && !isAdmin {
 		writeError(w, http.StatusForbidden, "Access denied")
@@ -158,7 +162,9 @@ func (h *CoachHandler) EndRelationship(w http.ResponseWriter, r *http.Request) {
 		otherID = coachID
 	}
 	var userName string
-	h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&userName)
+	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&userName); err != nil {
+		logErr("fetch user name for end relationship", err)
+	}
 	meta := map[string]interface{}{"user_id": userID, "user_name": userName}
 	h.Notification.CreateNotification(otherID, "relationship_ended", "notif_relationship_ended_title", "notif_relationship_ended_body", meta, nil)
 
@@ -292,7 +298,9 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 	} else if statusFilter == "finished" {
 		countQuery += " AND aw.status IN ('completed', 'skipped')"
 	}
-	h.DB.QueryRow(countQuery, countArgs...).Scan(&total)
+	if err := h.DB.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+		logErr("count assigned workouts", err)
+	}
 
 	if limit > 0 {
 		query += " LIMIT ? OFFSET ?"
@@ -392,7 +400,10 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	if len(req.ExpectedFields) == 0 {
 		req.ExpectedFields = []string{"feeling"}
 	}
-	expectedFieldsJSON, _ := json.Marshal(req.ExpectedFields)
+	expectedFieldsJSON, err := json.Marshal(req.ExpectedFields)
+	if err != nil {
+		logErr("marshal expected fields", err)
+	}
 
 	log.Printf("Creating assigned workout: coach=%d student=%d title=%s type=%s due=%v", userID, req.StudentID, req.Title, req.Type, dueDateVal)
 	result, err := h.DB.Exec(`
@@ -405,7 +416,10 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	id, _ := result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		logErr("get last insert id for assigned workout", err)
+	}
 
 	// Insert segments
 	for i, seg := range req.Segments {
@@ -463,7 +477,9 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	// Emit notification for student
 	var coachName string
-	h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&coachName)
+	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&coachName); err != nil {
+		logErr("fetch coach name for workout notification", err)
+	}
 	notifMeta := map[string]interface{}{
 		"workout_id":    aw.ID,
 		"workout_title": req.Title,
@@ -577,7 +593,10 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	if len(req.ExpectedFields) == 0 {
 		req.ExpectedFields = []string{"feeling"}
 	}
-	efJSON, _ := json.Marshal(req.ExpectedFields)
+	efJSON, err := json.Marshal(req.ExpectedFields)
+	if err != nil {
+		logErr("marshal expected fields for update", err)
+	}
 
 	_, err = h.DB.Exec(`
 		UPDATE assigned_workouts
@@ -590,15 +609,19 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Replace segments: delete old, insert new
-	h.DB.Exec("DELETE FROM assigned_workout_segments WHERE assigned_workout_id = ?", awID)
+	if _, err := h.DB.Exec("DELETE FROM assigned_workout_segments WHERE assigned_workout_id = ?", awID); err != nil {
+		logErr("delete old segments", err)
+	}
 	for i, seg := range req.Segments {
-		h.DB.Exec(`
+		if _, err := h.DB.Exec(`
 			INSERT INTO assigned_workout_segments
 				(assigned_workout_id, order_index, segment_type, repetitions, value, unit, intensity,
 				 work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, awID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
-			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity)
+			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity); err != nil {
+			logErr("insert updated segment", err)
+		}
 	}
 
 	// Return updated workout
@@ -661,7 +684,10 @@ func (h *CoachHandler) DeleteAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logErr("get rows affected for delete assigned workout", err)
+	}
 	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "Assigned workout not found")
 		return
@@ -771,7 +797,10 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 		return
 	}
 
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logErr("get rows affected for update status", err)
+	}
 	if rowsAffected == 0 {
 		writeError(w, http.StatusNotFound, "Assigned workout not found")
 		return
@@ -786,8 +815,10 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 			Notes           sql.NullString
 			DueDate         sql.NullString
 		}
-		h.DB.QueryRow(`SELECT COALESCE(type,'easy'), COALESCE(distance_km,0), COALESCE(duration_seconds,0), notes, due_date
-			FROM assigned_workouts WHERE id = ?`, awID).Scan(&aw.Type, &aw.DistanceKm, &aw.DurationSeconds, &aw.Notes, &aw.DueDate)
+		if err := h.DB.QueryRow(`SELECT COALESCE(type,'easy'), COALESCE(distance_km,0), COALESCE(duration_seconds,0), notes, due_date
+			FROM assigned_workouts WHERE id = ?`, awID).Scan(&aw.Type, &aw.DistanceKm, &aw.DurationSeconds, &aw.Notes, &aw.DueDate); err != nil {
+			logErr("fetch assigned workout for completion", err)
+		}
 
 		// Use result values if provided, fall back to assigned values
 		finalDistance := aw.DistanceKm
@@ -815,17 +846,23 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 			notes = aw.Notes.String
 		}
 
-		h.DB.Exec(`INSERT INTO workouts (user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
+		if _, err := h.DB.Exec(`INSERT INTO workouts (user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
 			VALUES (?, ?, `+workoutDate+`, ?, ?, ?, ?, ?, NOW(), NOW())`,
-			userID, awID, dateArg, finalDistance, finalDuration, avgHR, aw.Type, notes)
+			userID, awID, dateArg, finalDistance, finalDuration, avgHR, aw.Type, notes); err != nil {
+			logErr("insert workout from completed assignment", err)
+		}
 	}
 
 	// Emit notification for coach
 	var studentName string
-	h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&studentName)
+	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&studentName); err != nil {
+		logErr("fetch student name for status notification", err)
+	}
 	var coachID int64
 	var workoutTitle string
-	h.DB.QueryRow("SELECT coach_id, title FROM assigned_workouts WHERE id = ?", awID).Scan(&coachID, &workoutTitle)
+	if err := h.DB.QueryRow("SELECT coach_id, title FROM assigned_workouts WHERE id = ?", awID).Scan(&coachID, &workoutTitle); err != nil {
+		logErr("fetch coach id and title for status notification", err)
+	}
 
 	if req.Status == "completed" || req.Status == "skipped" {
 		notifType := "workout_completed"

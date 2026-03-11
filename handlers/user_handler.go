@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
@@ -45,7 +46,9 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 
 	u := rowToJSON(row)
 	var hasCoach bool
-	_ = h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM coach_students WHERE student_id = ? AND status = 'active')", userID).Scan(&hasCoach)
+	if err := h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM coach_students WHERE student_id = ? AND status = 'active')", userID).Scan(&hasCoach); err != nil {
+		logErr("check has coach for profile", err)
+	}
 	u.HasCoach = hasCoach
 	writeJSON(w, http.StatusOK, u)
 }
@@ -105,17 +108,23 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Locality string `json:"locality"`
-		Level    string `json:"level"`
+		Locality string   `json:"locality"`
+		Level    []string `json:"level"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
+	if len(req.Level) == 0 {
+		writeError(w, http.StatusBadRequest, "At least one level is required")
+		return
+	}
 
 	// Check if already a coach
 	var isCoach bool
-	h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach)
+	if err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach); err != nil {
+		logErr("check is coach for request", err)
+	}
 	if isCoach {
 		writeError(w, http.StatusConflict, "User is already a coach")
 		return
@@ -123,23 +132,30 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 
 	// Check if there's already a pending coach request
 	var pendingCount int
-	h.DB.QueryRow(`
+	if err := h.DB.QueryRow(`
 		SELECT COUNT(*) FROM notifications
 		WHERE type = 'coach_request' AND actions IS NOT NULL
 		AND JSON_EXTRACT(metadata, '$.requester_id') = ?
-	`, userID).Scan(&pendingCount)
+	`, userID).Scan(&pendingCount); err != nil {
+		logErr("check pending coach request count", err)
+	}
 	if pendingCount > 0 {
 		writeError(w, http.StatusConflict, "Coach request already pending")
 		return
 	}
 
-	// Save locality and level on user
-	h.DB.Exec("UPDATE users SET coach_locality = ?, coach_level = ?, updated_at = NOW() WHERE id = ?",
-		req.Locality, req.Level, userID)
+	// Save locality and level on user (levels as comma-separated string)
+	levelStr := strings.Join(req.Level, ",")
+	if _, err := h.DB.Exec("UPDATE users SET coach_locality = ?, coach_level = ?, updated_at = NOW() WHERE id = ?",
+		req.Locality, levelStr, userID); err != nil {
+		logErr("update user coach locality and level", err)
+	}
 
 	// Get requester name
 	var requesterName, requesterAvatar string
-	h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(avatar_url, '') FROM users WHERE id = ?", userID).Scan(&requesterName, &requesterAvatar)
+	if err := h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(avatar_url, '') FROM users WHERE id = ?", userID).Scan(&requesterName, &requesterAvatar); err != nil {
+		logErr("fetch requester name for coach request", err)
+	}
 
 	// Get all admin users
 	rows, err := h.DB.Query("SELECT id FROM users WHERE is_admin = TRUE")
@@ -193,7 +209,9 @@ func (h *UserHandler) GetCoachRequestStatus(w http.ResponseWriter, r *http.Reque
 
 	// Check if already a coach
 	var isCoach bool
-	h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach)
+	if err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach); err != nil {
+		logErr("check is coach for request status", err)
+	}
 	if isCoach {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 		return
@@ -201,11 +219,13 @@ func (h *UserHandler) GetCoachRequestStatus(w http.ResponseWriter, r *http.Reque
 
 	// Check if there's a pending coach request
 	var pendingCount int
-	h.DB.QueryRow(`
+	if err := h.DB.QueryRow(`
 		SELECT COUNT(*) FROM notifications
 		WHERE type = 'coach_request' AND actions IS NOT NULL
 		AND JSON_EXTRACT(metadata, '$.requester_id') = ?
-	`, userID).Scan(&pendingCount)
+	`, userID).Scan(&pendingCount); err != nil {
+		logErr("check pending coach request status", err)
+	}
 
 	if pendingCount > 0 {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "pending"})

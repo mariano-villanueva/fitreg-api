@@ -35,7 +35,7 @@ CREATE TABLE users (
     coach_description TEXT,
     coach_public BOOLEAN DEFAULT FALSE,
     coach_locality VARCHAR(255) DEFAULT NULL,
-    coach_level ENUM('beginner','intermediate','advanced','competitive') DEFAULT NULL,
+    coach_level VARCHAR(255) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_users_google_id (google_id),

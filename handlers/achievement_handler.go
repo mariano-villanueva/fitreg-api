@@ -44,6 +44,7 @@ func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.R
 		if err := rows.Scan(&a.ID, &a.CoachID, &a.EventName, &a.EventDate,
 			&a.DistanceKm, &a.ResultTime, &a.Position, &a.IsVerified,
 			&a.VerifiedBy, &verifiedAt, &a.CreatedAt); err != nil {
+			logErr("scan achievement row", err)
 			continue
 		}
 		if verifiedAt.Valid {
@@ -89,7 +90,10 @@ func (h *AchievementHandler) CreateAchievement(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	id, _ := result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		logErr("get last insert id for achievement", err)
+	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "message": "Achievement created"})
 }
 
