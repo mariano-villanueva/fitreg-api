@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/fitreg/api/middleware"
@@ -11,10 +12,11 @@ import (
 
 type UserHandler struct {
 	DB *sql.DB
+	NH *NotificationHandler
 }
 
-func NewUserHandler(db *sql.DB) *UserHandler {
-	return &UserHandler{DB: db}
+func NewUserHandler(db *sql.DB, nh *NotificationHandler) *UserHandler {
+	return &UserHandler{DB: db, NH: nh}
 }
 
 func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -57,10 +59,20 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var birthDate interface{} = req.BirthDate
+	if req.BirthDate == "" {
+		birthDate = nil
+	}
+	var sex interface{} = req.Sex
+	if req.Sex == "" {
+		sex = nil
+	}
+
 	_, err := h.DB.Exec(`
-		UPDATE users SET name = ?, sex = ?, birth_date = ?, weight_kg = ?, height_cm = ?, language = ?, is_coach = ?, onboarding_completed = ?, updated_at = NOW() WHERE id = ?
-	`, req.Name, req.Sex, req.BirthDate, req.WeightKg, req.HeightCm, req.Language, req.IsCoach, req.OnboardingCompleted, userID)
+		UPDATE users SET name = ?, sex = ?, birth_date = ?, weight_kg = ?, height_cm = ?, language = ?, onboarding_completed = ?, updated_at = NOW() WHERE id = ?
+	`, req.Name, sex, birthDate, req.WeightKg, req.HeightCm, req.Language, req.OnboardingCompleted, userID)
 	if err != nil {
+		log.Printf("ERROR UpdateProfile: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to update profile")
 		return
 	}
@@ -79,4 +91,122 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, rowToJSON(row))
+}
+
+func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req struct {
+		Locality string `json:"locality"`
+		Level    string `json:"level"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Check if already a coach
+	var isCoach bool
+	h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach)
+	if isCoach {
+		writeError(w, http.StatusConflict, "User is already a coach")
+		return
+	}
+
+	// Check if there's already a pending coach request
+	var pendingCount int
+	h.DB.QueryRow(`
+		SELECT COUNT(*) FROM notifications
+		WHERE type = 'coach_request' AND actions IS NOT NULL
+		AND JSON_EXTRACT(metadata, '$.requester_id') = ?
+	`, userID).Scan(&pendingCount)
+	if pendingCount > 0 {
+		writeError(w, http.StatusConflict, "Coach request already pending")
+		return
+	}
+
+	// Save locality and level on user
+	h.DB.Exec("UPDATE users SET coach_locality = ?, coach_level = ?, updated_at = NOW() WHERE id = ?",
+		req.Locality, req.Level, userID)
+
+	// Get requester name
+	var requesterName, requesterAvatar string
+	h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(avatar_url, '') FROM users WHERE id = ?", userID).Scan(&requesterName, &requesterAvatar)
+
+	// Get all admin users
+	rows, err := h.DB.Query("SELECT id FROM users WHERE is_admin = TRUE")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to fetch admins")
+		return
+	}
+	defer rows.Close()
+
+	var adminIDs []int64
+	for rows.Next() {
+		var adminID int64
+		if err := rows.Scan(&adminID); err == nil {
+			adminIDs = append(adminIDs, adminID)
+		}
+	}
+
+	if len(adminIDs) == 0 {
+		writeError(w, http.StatusInternalServerError, "No admins found")
+		return
+	}
+
+	// Create notification for each admin
+	meta := map[string]interface{}{
+		"requester_id":     userID,
+		"requester_name":   requesterName,
+		"requester_avatar": requesterAvatar,
+		"locality":         req.Locality,
+		"level":            req.Level,
+	}
+	actions := []models.NotificationAction{
+		{Key: "approve", Label: "notif_coach_request_approve", Style: "primary"},
+		{Key: "reject", Label: "notif_coach_request_reject", Style: "danger"},
+	}
+
+	for _, adminID := range adminIDs {
+		h.NH.CreateNotification(adminID, "coach_request",
+			"notif_coach_request_title", "notif_coach_request_body",
+			meta, actions)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Coach request sent"})
+}
+
+func (h *UserHandler) GetCoachRequestStatus(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// Check if already a coach
+	var isCoach bool
+	h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach)
+	if isCoach {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
+		return
+	}
+
+	// Check if there's a pending coach request
+	var pendingCount int
+	h.DB.QueryRow(`
+		SELECT COUNT(*) FROM notifications
+		WHERE type = 'coach_request' AND actions IS NOT NULL
+		AND JSON_EXTRACT(metadata, '$.requester_id') = ?
+	`, userID).Scan(&pendingCount)
+
+	if pendingCount > 0 {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "pending"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "none"})
 }

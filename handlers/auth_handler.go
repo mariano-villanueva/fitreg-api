@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -71,6 +72,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	// Find or create user
 	user, err := h.findOrCreateUser(tokenInfo)
 	if err != nil {
+		log.Printf("ERROR findOrCreateUser: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to process user")
 		return
 	}
@@ -170,8 +172,9 @@ func rowToJSON(row userRow) userJSON {
 		u.Sex = row.Sex.String
 	}
 	if row.BirthDate.Valid {
-		u.BirthDate = row.BirthDate.String
-		u.Age = models.CalculateAge(row.BirthDate.String)
+		bd := truncateDate(row.BirthDate.String)
+		u.BirthDate = bd
+		u.Age = models.CalculateAge(bd)
 	}
 	if row.WeightKg.Valid {
 		u.WeightKg = row.WeightKg.Float64

@@ -29,7 +29,6 @@ type UpdateProfileRequest struct {
 	WeightKg            float64 `json:"weight_kg"`
 	HeightCm            int     `json:"height_cm"`
 	Language            string  `json:"language"`
-	IsCoach             bool    `json:"is_coach"`
 	OnboardingCompleted bool    `json:"onboarding_completed"`
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
@@ -52,25 +53,56 @@ func (h *CoachProfileHandler) UpdateCoachProfile(w http.ResponseWriter, r *http.
 // ListCoaches handles GET /api/coaches
 func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
+	locality := r.URL.Query().Get("locality")
+	level := r.URL.Query().Get("level")
+	sortBy := r.URL.Query().Get("sort")
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 1 || limit > 50 {
+		limit = 12
+	}
+	offset := (page - 1) * limit
+
+	where := "WHERE u.is_coach = TRUE AND u.coach_public = TRUE"
+	args := []interface{}{}
+
+	if search != "" {
+		where += " AND (u.name LIKE ? OR u.coach_description LIKE ?)"
+		args = append(args, "%"+search+"%", "%"+search+"%")
+	}
+	if locality != "" {
+		where += " AND u.coach_locality LIKE ?"
+		args = append(args, "%"+locality+"%")
+	}
+	if level != "" {
+		where += " AND u.coach_level = ?"
+		args = append(args, level)
+	}
+
+	// Count total
+	var total int
+	countQuery := "SELECT COUNT(DISTINCT u.id) FROM users u " + where
+	h.DB.QueryRow(countQuery, args...).Scan(&total)
 
 	query := `
 		SELECT u.id, u.name, COALESCE(u.avatar_url, '') as avatar_url,
 			COALESCE(u.coach_description, '') as coach_description,
+			COALESCE(u.coach_locality, '') as coach_locality,
+			COALESCE(u.coach_level, '') as coach_level,
 			COALESCE(AVG(cr.rating), 0) as avg_rating,
 			COUNT(cr.id) as rating_count,
 			(SELECT COUNT(*) FROM coach_achievements ca WHERE ca.coach_id = u.id AND ca.is_verified = TRUE) as verified_achievements
 		FROM users u
 		LEFT JOIN coach_ratings cr ON cr.coach_id = u.id
-		WHERE u.is_coach = TRUE AND u.coach_public = TRUE
+		` + where + `
+		GROUP BY u.id ` + coachSortOrder(sortBy) + `
+		LIMIT ? OFFSET ?
 	`
-	args := []interface{}{}
-
-	if search != "" {
-		query += " AND u.name LIKE ?"
-		args = append(args, "%"+search+"%")
-	}
-
-	query += " GROUP BY u.id ORDER BY avg_rating DESC"
+	args = append(args, limit, offset)
 
 	rows, err := h.DB.Query(query, args...)
 	if err != nil {
@@ -84,13 +116,17 @@ func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request
 	for rows.Next() {
 		var c models.CoachListItem
 		if err := rows.Scan(&c.ID, &c.Name, &c.AvatarURL, &c.CoachDescription,
+			&c.CoachLocality, &c.CoachLevel,
 			&c.AvgRating, &c.RatingCount, &c.VerifiedCount); err != nil {
 			continue
 		}
 		coaches = append(coaches, c)
 	}
 
-	writeJSON(w, http.StatusOK, coaches)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data":  coaches,
+		"total": total,
+	})
 }
 
 // GetCoachProfile handles GET /api/coaches/{id}
@@ -180,4 +216,17 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, profile)
+}
+
+func coachSortOrder(sortBy string) string {
+	switch sortBy {
+	case "name":
+		return "ORDER BY u.name ASC"
+	case "newest":
+		return "ORDER BY u.created_at DESC"
+	case "oldest":
+		return "ORDER BY u.created_at ASC"
+	default:
+		return "ORDER BY avg_rating DESC"
+	}
 }
