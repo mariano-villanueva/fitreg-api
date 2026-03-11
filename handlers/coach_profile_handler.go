@@ -171,7 +171,8 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 	// Fetch achievements
 	achRows, err := h.DB.Query(`
 		SELECT id, coach_id, event_name, event_date, COALESCE(distance_km, 0),
-			COALESCE(result_time, ''), COALESCE(position, 0), is_verified,
+			COALESCE(result_time, ''), COALESCE(position, 0), COALESCE(extra_info, ''),
+			is_verified, COALESCE(rejection_reason, ''),
 			COALESCE(verified_by, 0), COALESCE(verified_at, ''), created_at
 		FROM coach_achievements WHERE coach_id = ? ORDER BY event_date DESC
 	`, coachID)
@@ -181,7 +182,8 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 			var a models.CoachAchievement
 			var verifiedAt sql.NullString
 			if err := achRows.Scan(&a.ID, &a.CoachID, &a.EventName, &a.EventDate,
-				&a.DistanceKm, &a.ResultTime, &a.Position, &a.IsVerified,
+				&a.DistanceKm, &a.ResultTime, &a.Position, &a.ExtraInfo,
+				&a.IsVerified, &a.RejectionReason,
 				&a.VerifiedBy, &verifiedAt, &a.CreatedAt); err != nil {
 				logErr("scan coach achievement row", err)
 				continue
@@ -189,6 +191,7 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 			if verifiedAt.Valid {
 				a.VerifiedAt = verifiedAt.String
 			}
+			a.EventDate = truncateDate(a.EventDate)
 			profile.Achievements = append(profile.Achievements, a)
 		}
 	}
