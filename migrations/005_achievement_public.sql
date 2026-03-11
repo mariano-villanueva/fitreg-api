@@ -1,0 +1,1 @@
+ALTER TABLE coach_achievements ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT TRUE;

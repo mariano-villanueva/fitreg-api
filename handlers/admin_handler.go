@@ -143,7 +143,7 @@ func (h *AdminHandler) PendingAchievements(w http.ResponseWriter, r *http.Reques
 		SELECT ca.id, ca.coach_id, ca.event_name, ca.event_date,
 			COALESCE(ca.distance_km, 0), COALESCE(ca.result_time, ''),
 			COALESCE(ca.position, 0), COALESCE(ca.extra_info, ''),
-			ca.created_at, u.name as coach_name
+			ca.image_file_id, ca.created_at, u.name as coach_name
 		FROM coach_achievements ca
 		JOIN users u ON u.id = ca.coach_id
 		WHERE ca.is_verified = FALSE AND ca.rejection_reason IS NULL
@@ -156,16 +156,18 @@ func (h *AdminHandler) PendingAchievements(w http.ResponseWriter, r *http.Reques
 	defer rows.Close()
 
 	type PendingAchievement struct {
-		ID         int64   `json:"id"`
-		CoachID    int64   `json:"coach_id"`
-		EventName  string  `json:"event_name"`
-		EventDate  string  `json:"event_date"`
-		DistanceKm float64 `json:"distance_km"`
-		ResultTime string  `json:"result_time"`
-		Position   int     `json:"position"`
-		ExtraInfo  string  `json:"extra_info"`
-		CreatedAt  string  `json:"created_at"`
-		CoachName  string  `json:"coach_name"`
+		ID          int64   `json:"id"`
+		CoachID     int64   `json:"coach_id"`
+		EventName   string  `json:"event_name"`
+		EventDate   string  `json:"event_date"`
+		DistanceKm  float64 `json:"distance_km"`
+		ResultTime  string  `json:"result_time"`
+		Position    int     `json:"position"`
+		ExtraInfo   string  `json:"extra_info"`
+		ImageFileID *int64  `json:"image_file_id"`
+		ImageURL    string  `json:"image_url,omitempty"`
+		CreatedAt   string  `json:"created_at"`
+		CoachName   string  `json:"coach_name"`
 	}
 
 	achievements := []PendingAchievement{}
@@ -173,11 +175,17 @@ func (h *AdminHandler) PendingAchievements(w http.ResponseWriter, r *http.Reques
 		var a PendingAchievement
 		if err := rows.Scan(&a.ID, &a.CoachID, &a.EventName, &a.EventDate,
 			&a.DistanceKm, &a.ResultTime, &a.Position, &a.ExtraInfo,
-			&a.CreatedAt, &a.CoachName); err != nil {
+			&a.ImageFileID, &a.CreatedAt, &a.CoachName); err != nil {
 			logErr("scan pending achievement row", err)
 			continue
 		}
 		a.EventDate = truncateDate(a.EventDate)
+		if a.ImageFileID != nil {
+			var uuid string
+			if err := h.DB.QueryRow("SELECT uuid FROM files WHERE id = ?", *a.ImageFileID).Scan(&uuid); err == nil {
+				a.ImageURL = "/api/files/" + uuid + "/download"
+			}
+		}
 		achievements = append(achievements, a)
 	}
 

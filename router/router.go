@@ -7,9 +7,10 @@ import (
 
 	"github.com/fitreg/api/handlers"
 	"github.com/fitreg/api/middleware"
+	"github.com/fitreg/api/storage"
 )
 
-func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
+func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) http.Handler {
 	mux := http.NewServeMux()
 
 	ah := handlers.NewAuthHandler(db, googleClientID, jwtSecret)
@@ -22,6 +23,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
 	achh := handlers.NewAchievementHandler(db, nh)
 	rth := handlers.NewRatingHandler(db)
 	adm := handlers.NewAdminHandler(db, nh)
+	fh := handlers.NewFileHandler(db, store)
 
 	// Auth routes (public)
 	mux.HandleFunc("/api/auth/google", func(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +171,10 @@ func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
 	})
 
 	mux.HandleFunc("/api/coach/achievements/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/visibility") {
+			achh.ToggleVisibility(w, r)
+			return
+		}
 		switch r.Method {
 		case http.MethodPut:
 			achh.UpdateAchievement(w, r)
@@ -353,6 +359,31 @@ func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
 			return
 		}
 		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+	})
+
+	// File routes
+	mux.HandleFunc("/api/files", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			fh.Upload(w, r)
+		} else {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/files/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/download") {
+			if r.Method == http.MethodGet {
+				fh.Download(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if r.Method == http.MethodDelete {
+			fh.Delete(w, r)
+		} else {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
 	})
 
 	// Health check (public)

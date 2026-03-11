@@ -196,7 +196,7 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 	}
 
 	rows, err := h.DB.Query(`
-		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, type, notes, created_at, updated_at
+		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
 		FROM workouts
 		WHERE user_id = ?
 		ORDER BY date DESC
@@ -212,7 +212,7 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 		var wo models.Workout
 		var avgPace, workoutType, notes sql.NullString
 		if err := rows.Scan(&wo.ID, &wo.UserID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
-			&avgPace, &wo.Calories, &wo.AvgHeartRate, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
+			&avgPace, &wo.Calories, &wo.AvgHeartRate, &wo.Feeling, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to scan workout")
 			return
 		}
@@ -243,7 +243,7 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
 			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.status, aw.due_date,
+			aw.image_file_id, aw.status, aw.due_date,
 			aw.created_at, aw.updated_at, u.name as student_name
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
@@ -321,7 +321,7 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
 			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.Status, &dueDate,
+			&aw.ImageFileID, &aw.Status, &dueDate,
 			&aw.CreatedAt, &aw.UpdatedAt, &aw.StudentName); err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to scan assigned workout")
 			return
@@ -343,6 +343,7 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 
 	for i := range workouts {
 		workouts[i].Segments = fetchSegments(h.DB, workouts[i].ID)
+		h.populateImageURL(&workouts[i])
 	}
 
 	if limit > 0 {
@@ -446,7 +447,7 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
 			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.status, aw.due_date,
+			aw.image_file_id, aw.status, aw.due_date,
 			aw.created_at, aw.updated_at, u.name as student_name
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
@@ -454,7 +455,7 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	`, id).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
 		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.Status, &dueDate,
+			&aw.ImageFileID, &aw.Status, &dueDate,
 		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to fetch created workout")
@@ -474,6 +475,7 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	}
 	aw.StudentName = studentName
 	aw.Segments = fetchSegments(h.DB, aw.ID)
+	h.populateImageURL(&aw)
 
 	// Emit notification for student
 	var coachName string
@@ -511,7 +513,7 @@ func (h *CoachHandler) GetAssignedWorkout(w http.ResponseWriter, r *http.Request
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
 			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.status, aw.due_date,
+			aw.image_file_id, aw.status, aw.due_date,
 			aw.created_at, aw.updated_at, u.name as student_name
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
@@ -519,7 +521,7 @@ func (h *CoachHandler) GetAssignedWorkout(w http.ResponseWriter, r *http.Request
 	`, awID, userID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
 		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.Status, &dueDate,
+			&aw.ImageFileID, &aw.Status, &dueDate,
 		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "Assigned workout not found")
@@ -543,6 +545,7 @@ func (h *CoachHandler) GetAssignedWorkout(w http.ResponseWriter, r *http.Request
 	}
 	aw.StudentName = studentName
 	aw.Segments = fetchSegments(h.DB, aw.ID)
+	h.populateImageURL(&aw)
 
 	writeJSON(w, http.StatusOK, aw)
 }
@@ -632,7 +635,7 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
 			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.status, aw.due_date,
+			aw.image_file_id, aw.status, aw.due_date,
 			aw.created_at, aw.updated_at, u.name as student_name
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
@@ -640,7 +643,7 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	`, awID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
 		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.Status, &dueDate,
+			&aw.ImageFileID, &aw.Status, &dueDate,
 		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to fetch updated workout")
@@ -660,6 +663,7 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	}
 	aw.StudentName = studentName
 	aw.Segments = fetchSegments(h.DB, aw.ID)
+	h.populateImageURL(&aw)
 
 	writeJSON(w, http.StatusOK, aw)
 }
@@ -708,7 +712,7 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
 			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.status, aw.due_date,
+			aw.image_file_id, aw.status, aw.due_date,
 			aw.created_at, aw.updated_at, u.name as coach_name
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.coach_id
@@ -728,7 +732,7 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
 			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.Status, &dueDate,
+			&aw.ImageFileID, &aw.Status, &dueDate,
 			&aw.CreatedAt, &aw.UpdatedAt, &aw.CoachName); err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to scan assigned workout")
 			return
@@ -750,9 +754,21 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 
 	for i := range workouts {
 		workouts[i].Segments = fetchSegments(h.DB, workouts[i].ID)
+		h.populateImageURL(&workouts[i])
 	}
 
 	writeJSON(w, http.StatusOK, workouts)
+}
+
+func (h *CoachHandler) populateImageURL(aw *models.AssignedWorkout) {
+	if aw.ImageFileID == nil {
+		return
+	}
+	var uuid string
+	if err := h.DB.QueryRow("SELECT uuid FROM files WHERE id = ?", *aw.ImageFileID).Scan(&uuid); err != nil {
+		return
+	}
+	aw.ImageURL = "/api/files/" + uuid + "/download"
 }
 
 // UpdateAssignedWorkoutStatus handles PUT /api/my-assigned-workouts/{id}/status
@@ -790,8 +806,8 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 	result, err := h.DB.Exec(`
 		UPDATE assigned_workouts SET status = ?,
 			result_time_seconds = ?, result_distance_km = ?, result_heart_rate = ?, result_feeling = ?,
-			updated_at = NOW() WHERE id = ? AND student_id = ?
-	`, req.Status, req.ResultTimeSeconds, req.ResultDistanceKm, req.ResultHeartRate, req.ResultFeeling, awID, userID)
+			image_file_id = ?, updated_at = NOW() WHERE id = ? AND student_id = ?
+	`, req.Status, req.ResultTimeSeconds, req.ResultDistanceKm, req.ResultHeartRate, req.ResultFeeling, req.ImageFileID, awID, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to update status")
 		return

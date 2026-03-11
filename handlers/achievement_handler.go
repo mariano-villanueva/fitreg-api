@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
@@ -29,7 +30,7 @@ func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.R
 	rows, err := h.DB.Query(`
 		SELECT id, coach_id, event_name, event_date, COALESCE(distance_km, 0),
 			COALESCE(result_time, ''), COALESCE(position, 0), COALESCE(extra_info, ''),
-			is_verified, COALESCE(rejection_reason, ''),
+			image_file_id, is_public, is_verified, COALESCE(rejection_reason, ''),
 			COALESCE(verified_by, 0), COALESCE(verified_at, ''), created_at
 		FROM coach_achievements WHERE coach_id = ? ORDER BY event_date DESC
 	`, userID)
@@ -45,7 +46,7 @@ func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.R
 		var verifiedAt sql.NullString
 		if err := rows.Scan(&a.ID, &a.CoachID, &a.EventName, &a.EventDate,
 			&a.DistanceKm, &a.ResultTime, &a.Position, &a.ExtraInfo,
-			&a.IsVerified, &a.RejectionReason,
+			&a.ImageFileID, &a.IsPublic, &a.IsVerified, &a.RejectionReason,
 			&a.VerifiedBy, &verifiedAt, &a.CreatedAt); err != nil {
 			logErr("scan achievement row", err)
 			continue
@@ -54,6 +55,7 @@ func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.R
 			a.VerifiedAt = verifiedAt.String
 		}
 		a.EventDate = truncateDate(a.EventDate)
+		h.populateImageURL(&a)
 		achievements = append(achievements, a)
 	}
 
@@ -85,9 +87,9 @@ func (h *AchievementHandler) CreateAchievement(w http.ResponseWriter, r *http.Re
 	}
 
 	result, err := h.DB.Exec(`
-		INSERT INTO coach_achievements (coach_id, event_name, event_date, distance_km, result_time, position, extra_info)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, userID, req.EventName, req.EventDate, req.DistanceKm, req.ResultTime, req.Position, req.ExtraInfo)
+		INSERT INTO coach_achievements (coach_id, event_name, event_date, distance_km, result_time, position, extra_info, image_file_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, userID, req.EventName, req.EventDate, req.DistanceKm, req.ResultTime, req.Position, req.ExtraInfo, req.ImageFileID)
 	if err != nil {
 		log.Printf("ERROR creating achievement: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to create achievement")
@@ -147,9 +149,9 @@ func (h *AchievementHandler) UpdateAchievement(w http.ResponseWriter, r *http.Re
 	// Clear rejection_reason to resubmit as pending
 	_, err = h.DB.Exec(`
 		UPDATE coach_achievements SET event_name = ?, event_date = ?, distance_km = ?, result_time = ?,
-			position = ?, extra_info = ?, rejection_reason = NULL
+			position = ?, extra_info = ?, image_file_id = ?, rejection_reason = NULL
 		WHERE id = ? AND coach_id = ?
-	`, req.EventName, req.EventDate, req.DistanceKm, req.ResultTime, req.Position, req.ExtraInfo, achID, userID)
+	`, req.EventName, req.EventDate, req.DistanceKm, req.ResultTime, req.Position, req.ExtraInfo, req.ImageFileID, achID, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to update achievement")
 		return
@@ -188,6 +190,53 @@ func (h *AchievementHandler) DeleteAchievement(w http.ResponseWriter, r *http.Re
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Achievement deleted"})
+}
+
+func (h *AchievementHandler) ToggleVisibility(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// Path: /api/coach/achievements/{id}/visibility
+	path := strings.TrimSuffix(r.URL.Path, "/visibility")
+	achID, err := extractID(path, "/api/coach/achievements/")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid achievement ID")
+		return
+	}
+
+	var req struct {
+		IsPublic bool `json:"is_public"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	result, err := h.DB.Exec("UPDATE coach_achievements SET is_public = ? WHERE id = ? AND coach_id = ?", req.IsPublic, achID, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to update visibility")
+		return
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		writeError(w, http.StatusNotFound, "Achievement not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Visibility updated", "is_public": req.IsPublic})
+}
+
+func (h *AchievementHandler) populateImageURL(a *models.CoachAchievement) {
+	if a.ImageFileID == nil {
+		return
+	}
+	var uuid string
+	if err := h.DB.QueryRow("SELECT uuid FROM files WHERE id = ?", *a.ImageFileID).Scan(&uuid); err != nil {
+		return
+	}
+	a.ImageURL = "/api/files/" + uuid + "/download"
 }
 
 // notifyAdminsNewAchievement sends a notification to all admins about a new/resubmitted achievement.

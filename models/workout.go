@@ -12,6 +12,7 @@ type Workout struct {
 	AvgPace         string    `json:"avg_pace"`
 	Calories        int       `json:"calories"`
 	AvgHeartRate    int       `json:"avg_heart_rate"`
+	Feeling         *int      `json:"feeling"`
 	Type            string    `json:"type"`
 	Notes           string    `json:"notes"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -25,6 +26,7 @@ type CreateWorkoutRequest struct {
 	AvgPace         string  `json:"avg_pace"`
 	Calories        int     `json:"calories"`
 	AvgHeartRate    int     `json:"avg_heart_rate"`
+	Feeling         *int    `json:"feeling"`
 	Type            string  `json:"type"`
 	Notes           string  `json:"notes"`
 }
@@ -36,6 +38,7 @@ type UpdateWorkoutRequest struct {
 	AvgPace         string  `json:"avg_pace"`
 	Calories        int     `json:"calories"`
 	AvgHeartRate    int     `json:"avg_heart_rate"`
+	Feeling         *int    `json:"feeling"`
 	Type            string  `json:"type"`
 	Notes           string  `json:"notes"`
 }

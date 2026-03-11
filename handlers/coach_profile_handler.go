@@ -168,13 +168,32 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 		profile.CoachDescription = description.String
 	}
 
+	// Check if requesting user is a student of this coach
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID > 0 {
+		var exists int
+		if err := h.DB.QueryRow("SELECT 1 FROM coach_students WHERE coach_id = ? AND student_id = ? AND status = 'active'", coachID, userID).Scan(&exists); err == nil {
+			profile.IsMyCoach = true
+		}
+	}
+
+	// Count active students
+	if err := h.DB.QueryRow("SELECT COUNT(*) FROM coach_students WHERE coach_id = ? AND status = 'active'", coachID).Scan(&profile.StudentCount); err != nil {
+		logErr("count coach students", err)
+	}
+
+	// Count verified achievements
+	if err := h.DB.QueryRow("SELECT COUNT(*) FROM coach_achievements WHERE coach_id = ? AND is_verified = TRUE", coachID).Scan(&profile.VerifiedAchievementCount); err != nil {
+		logErr("count verified achievements", err)
+	}
+
 	// Fetch achievements
 	achRows, err := h.DB.Query(`
 		SELECT id, coach_id, event_name, event_date, COALESCE(distance_km, 0),
 			COALESCE(result_time, ''), COALESCE(position, 0), COALESCE(extra_info, ''),
-			is_verified, COALESCE(rejection_reason, ''),
+			image_file_id, is_public, is_verified, COALESCE(rejection_reason, ''),
 			COALESCE(verified_by, 0), COALESCE(verified_at, ''), created_at
-		FROM coach_achievements WHERE coach_id = ? ORDER BY event_date DESC
+		FROM coach_achievements WHERE coach_id = ? AND is_public = TRUE ORDER BY event_date DESC
 	`, coachID)
 	if err == nil {
 		defer achRows.Close()
@@ -183,7 +202,7 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 			var verifiedAt sql.NullString
 			if err := achRows.Scan(&a.ID, &a.CoachID, &a.EventName, &a.EventDate,
 				&a.DistanceKm, &a.ResultTime, &a.Position, &a.ExtraInfo,
-				&a.IsVerified, &a.RejectionReason,
+				&a.ImageFileID, &a.IsPublic, &a.IsVerified, &a.RejectionReason,
 				&a.VerifiedBy, &verifiedAt, &a.CreatedAt); err != nil {
 				logErr("scan coach achievement row", err)
 				continue
@@ -192,6 +211,12 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 				a.VerifiedAt = verifiedAt.String
 			}
 			a.EventDate = truncateDate(a.EventDate)
+			if a.ImageFileID != nil {
+				var uuid string
+				if err := h.DB.QueryRow("SELECT uuid FROM files WHERE id = ?", *a.ImageFileID).Scan(&uuid); err == nil {
+					a.ImageURL = "/api/files/" + uuid + "/download"
+				}
+			}
 			profile.Achievements = append(profile.Achievements, a)
 		}
 	}
