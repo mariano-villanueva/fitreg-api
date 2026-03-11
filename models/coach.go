@@ -102,7 +102,9 @@ type CoachAchievement struct {
 	DistanceKm float64   `json:"distance_km"`
 	ResultTime string    `json:"result_time"`
 	Position   int       `json:"position"`
-	IsVerified bool      `json:"is_verified"`
+	ExtraInfo       string `json:"extra_info"`
+	IsVerified      bool   `json:"is_verified"`
+	RejectionReason string `json:"rejection_reason"`
 	VerifiedBy int64     `json:"verified_by,omitempty"`
 	VerifiedAt string    `json:"verified_at,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -114,6 +116,7 @@ type CreateAchievementRequest struct {
 	DistanceKm float64 `json:"distance_km"`
 	ResultTime string  `json:"result_time"`
 	Position   int     `json:"position"`
+	ExtraInfo  string  `json:"extra_info"`
 }
 
 type UpdateAchievementRequest struct {
@@ -122,6 +125,7 @@ type UpdateAchievementRequest struct {
 	DistanceKm float64 `json:"distance_km"`
 	ResultTime string  `json:"result_time"`
 	Position   int     `json:"position"`
+	ExtraInfo  string  `json:"extra_info"`
 }
 
 type CoachRating struct {

@@ -11,11 +11,12 @@ import (
 )
 
 type AchievementHandler struct {
-	DB *sql.DB
+	DB           *sql.DB
+	Notification *NotificationHandler
 }
 
-func NewAchievementHandler(db *sql.DB) *AchievementHandler {
-	return &AchievementHandler{DB: db}
+func NewAchievementHandler(db *sql.DB, nh *NotificationHandler) *AchievementHandler {
+	return &AchievementHandler{DB: db, Notification: nh}
 }
 
 func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +28,8 @@ func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.R
 
 	rows, err := h.DB.Query(`
 		SELECT id, coach_id, event_name, event_date, COALESCE(distance_km, 0),
-			COALESCE(result_time, ''), COALESCE(position, 0), is_verified,
+			COALESCE(result_time, ''), COALESCE(position, 0), COALESCE(extra_info, ''),
+			is_verified, COALESCE(rejection_reason, ''),
 			COALESCE(verified_by, 0), COALESCE(verified_at, ''), created_at
 		FROM coach_achievements WHERE coach_id = ? ORDER BY event_date DESC
 	`, userID)
@@ -42,7 +44,8 @@ func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.R
 		var a models.CoachAchievement
 		var verifiedAt sql.NullString
 		if err := rows.Scan(&a.ID, &a.CoachID, &a.EventName, &a.EventDate,
-			&a.DistanceKm, &a.ResultTime, &a.Position, &a.IsVerified,
+			&a.DistanceKm, &a.ResultTime, &a.Position, &a.ExtraInfo,
+			&a.IsVerified, &a.RejectionReason,
 			&a.VerifiedBy, &verifiedAt, &a.CreatedAt); err != nil {
 			logErr("scan achievement row", err)
 			continue
@@ -50,6 +53,7 @@ func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.R
 		if verifiedAt.Valid {
 			a.VerifiedAt = verifiedAt.String
 		}
+		a.EventDate = truncateDate(a.EventDate)
 		achievements = append(achievements, a)
 	}
 
@@ -81,9 +85,9 @@ func (h *AchievementHandler) CreateAchievement(w http.ResponseWriter, r *http.Re
 	}
 
 	result, err := h.DB.Exec(`
-		INSERT INTO coach_achievements (coach_id, event_name, event_date, distance_km, result_time, position)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, userID, req.EventName, req.EventDate, req.DistanceKm, req.ResultTime, req.Position)
+		INSERT INTO coach_achievements (coach_id, event_name, event_date, distance_km, result_time, position, extra_info)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, userID, req.EventName, req.EventDate, req.DistanceKm, req.ResultTime, req.Position, req.ExtraInfo)
 	if err != nil {
 		log.Printf("ERROR creating achievement: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to create achievement")
@@ -94,6 +98,9 @@ func (h *AchievementHandler) CreateAchievement(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		logErr("get last insert id for achievement", err)
 	}
+
+	h.notifyAdminsNewAchievement(userID, id, req.EventName)
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "message": "Achievement created"})
 }
 
@@ -111,7 +118,8 @@ func (h *AchievementHandler) UpdateAchievement(w http.ResponseWriter, r *http.Re
 	}
 
 	var isVerified bool
-	err = h.DB.QueryRow("SELECT is_verified FROM coach_achievements WHERE id = ? AND coach_id = ?", achID, userID).Scan(&isVerified)
+	var rejectionReason sql.NullString
+	err = h.DB.QueryRow("SELECT is_verified, rejection_reason FROM coach_achievements WHERE id = ? AND coach_id = ?", achID, userID).Scan(&isVerified, &rejectionReason)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "Achievement not found")
 		return
@@ -124,6 +132,11 @@ func (h *AchievementHandler) UpdateAchievement(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "Cannot edit a verified achievement")
 		return
 	}
+	// Only rejected achievements can be edited
+	if !rejectionReason.Valid || rejectionReason.String == "" {
+		writeError(w, http.StatusBadRequest, "Only rejected achievements can be edited")
+		return
+	}
 
 	var req models.UpdateAchievementRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -131,14 +144,19 @@ func (h *AchievementHandler) UpdateAchievement(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Clear rejection_reason to resubmit as pending
 	_, err = h.DB.Exec(`
-		UPDATE coach_achievements SET event_name = ?, event_date = ?, distance_km = ?, result_time = ?, position = ?
+		UPDATE coach_achievements SET event_name = ?, event_date = ?, distance_km = ?, result_time = ?,
+			position = ?, extra_info = ?, rejection_reason = NULL
 		WHERE id = ? AND coach_id = ?
-	`, req.EventName, req.EventDate, req.DistanceKm, req.ResultTime, req.Position, achID, userID)
+	`, req.EventName, req.EventDate, req.DistanceKm, req.ResultTime, req.Position, req.ExtraInfo, achID, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to update achievement")
 		return
 	}
+
+	// Re-notify admins about the resubmitted achievement
+	h.notifyAdminsNewAchievement(userID, achID, req.EventName)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Achievement updated"})
 }
@@ -156,7 +174,8 @@ func (h *AchievementHandler) DeleteAchievement(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	result, err := h.DB.Exec("DELETE FROM coach_achievements WHERE id = ? AND coach_id = ?", achID, userID)
+	// Only allow deleting rejected achievements
+	result, err := h.DB.Exec("DELETE FROM coach_achievements WHERE id = ? AND coach_id = ? AND rejection_reason IS NOT NULL", achID, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to delete achievement")
 		return
@@ -164,9 +183,37 @@ func (h *AchievementHandler) DeleteAchievement(w http.ResponseWriter, r *http.Re
 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
-		writeError(w, http.StatusNotFound, "Achievement not found")
+		writeError(w, http.StatusNotFound, "Achievement not found or cannot be deleted")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Achievement deleted"})
+}
+
+// notifyAdminsNewAchievement sends a notification to all admins about a new/resubmitted achievement.
+func (h *AchievementHandler) notifyAdminsNewAchievement(coachUserID, achievementID int64, eventName string) {
+	var coachName string
+	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", coachUserID).Scan(&coachName); err != nil {
+		logErr("fetch coach name for achievement notification", err)
+	}
+	adminRows, err := h.DB.Query("SELECT id FROM users WHERE is_admin = TRUE")
+	if err != nil {
+		logErr("fetch admin users for achievement notification", err)
+		return
+	}
+	defer adminRows.Close()
+	for adminRows.Next() {
+		var adminID int64
+		if err := adminRows.Scan(&adminID); err != nil {
+			continue
+		}
+		meta := map[string]interface{}{
+			"achievement_id": achievementID,
+			"event_name":     eventName,
+			"coach_name":     coachName,
+		}
+		h.Notification.CreateNotification(adminID, "achievement_pending",
+			"notif_achievement_pending_title", "notif_achievement_pending_body",
+			meta, nil)
+	}
 }

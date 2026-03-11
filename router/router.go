@@ -19,7 +19,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string) http.Handler {
 	ih := handlers.NewInvitationHandler(db, nh)
 	ch := handlers.NewCoachHandler(db, nh)
 	cph := handlers.NewCoachProfileHandler(db)
-	achh := handlers.NewAchievementHandler(db)
+	achh := handlers.NewAchievementHandler(db, nh)
 	rth := handlers.NewRatingHandler(db)
 	adm := handlers.NewAdminHandler(db, nh)
 
