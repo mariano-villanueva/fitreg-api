@@ -174,7 +174,8 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(adminIDs) == 0 {
-		writeError(w, http.StatusInternalServerError, "No admins found")
+		log.Println("WARNING: No admin users found for coach request notification")
+		writeJSON(w, http.StatusOK, map[string]string{"message": "Coach request sent"})
 		return
 	}
 

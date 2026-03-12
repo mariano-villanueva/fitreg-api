@@ -71,8 +71,8 @@ func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request
 	args := []interface{}{}
 
 	if search != "" {
-		where += " AND (u.name LIKE ? OR u.coach_description LIKE ?)"
-		args = append(args, "%"+search+"%", "%"+search+"%")
+		where += " AND (u.name LIKE ? OR u.coach_description LIKE ? OR u.coach_locality LIKE ?)"
+		args = append(args, "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	}
 	if locality != "" {
 		where += " AND u.coach_locality LIKE ?"
