@@ -267,6 +267,13 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 		query += " AND aw.status IN ('completed', 'skipped')"
 	}
 
+	startDate := r.URL.Query().Get("start_date")
+	endDate := r.URL.Query().Get("end_date")
+	if startDate != "" && endDate != "" {
+		query += " AND aw.due_date >= ? AND aw.due_date <= ?"
+		args = append(args, startDate, endDate)
+	}
+
 	query += " ORDER BY aw.due_date DESC"
 
 	// Pagination
@@ -297,6 +304,10 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 		countQuery += " AND aw.status = 'pending'"
 	} else if statusFilter == "finished" {
 		countQuery += " AND aw.status IN ('completed', 'skipped')"
+	}
+	if startDate != "" && endDate != "" {
+		countQuery += " AND aw.due_date >= ? AND aw.due_date <= ?"
+		countArgs = append(countArgs, startDate, endDate)
 	}
 	if err := h.DB.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
 		logErr("count assigned workouts", err)
@@ -575,8 +586,8 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "Failed to fetch workout")
 		return
 	}
-	if status == "completed" {
-		writeError(w, http.StatusBadRequest, "Cannot edit a completed workout")
+	if status != "pending" {
+		writeError(w, http.StatusBadRequest, "Cannot edit a finished workout")
 		return
 	}
 
@@ -682,6 +693,20 @@ func (h *CoachHandler) DeleteAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Check workout is still pending
+	var status string
+	if err := h.DB.QueryRow("SELECT status FROM assigned_workouts WHERE id = ? AND coach_id = ?", awID, userID).Scan(&status); err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "Assigned workout not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to fetch workout")
+		return
+	}
+	if status != "pending" {
+		writeError(w, http.StatusBadRequest, "Cannot delete a finished workout")
+		return
+	}
+
 	result, err := h.DB.Exec("DELETE FROM assigned_workouts WHERE id = ? AND coach_id = ?", awID, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to delete assigned workout")
@@ -708,7 +733,7 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	rows, err := h.DB.Query(`
+	query := `
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
 			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
@@ -717,8 +742,19 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.coach_id
 		WHERE aw.student_id = ?
-		ORDER BY aw.due_date ASC
-	`, userID)
+	`
+	args := []interface{}{userID}
+
+	startDate := r.URL.Query().Get("start_date")
+	endDate := r.URL.Query().Get("end_date")
+	if startDate != "" && endDate != "" {
+		query += " AND aw.due_date >= ? AND aw.due_date <= ?"
+		args = append(args, startDate, endDate)
+	}
+
+	query += " ORDER BY aw.due_date ASC"
+
+	rows, err := h.DB.Query(query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workouts")
 		return
