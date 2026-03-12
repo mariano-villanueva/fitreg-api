@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS coach_achievements;
 DROP TABLE IF EXISTS coach_students;
 DROP TABLE IF EXISTS invitations;
 DROP TABLE IF EXISTS workouts;
+DROP TABLE IF EXISTS files;
 DROP TABLE IF EXISTS users;
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -43,6 +44,23 @@ CREATE TABLE users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
+-- FILES
+-- ============================================================
+CREATE TABLE files (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    uuid VARCHAR(36) NOT NULL UNIQUE,
+    user_id BIGINT NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    storage_key VARCHAR(500) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_files_user (user_id),
+    CONSTRAINT fk_files_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
 -- WORKOUTS
 -- ============================================================
 CREATE TABLE workouts (
@@ -54,7 +72,8 @@ CREATE TABLE workouts (
     avg_pace VARCHAR(10),
     calories INT DEFAULT 0,
     avg_heart_rate INT DEFAULT 0,
-    type ENUM('easy','tempo','intervals','long_run','race','other') DEFAULT 'easy',
+    feeling INT NULL,
+    type ENUM('easy','tempo','intervals','long_run','race','fartlek','other') DEFAULT 'easy',
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -110,6 +129,8 @@ CREATE TABLE coach_achievements (
     result_time VARCHAR(10),
     position INT,
     extra_info VARCHAR(500),
+    image_file_id BIGINT NULL,
+    is_public BOOLEAN NOT NULL DEFAULT TRUE,
     is_verified BOOLEAN DEFAULT FALSE,
     rejection_reason VARCHAR(200),
     verified_by BIGINT,
@@ -117,7 +138,8 @@ CREATE TABLE coach_achievements (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_ca_coach (coach_id),
     CONSTRAINT fk_ca_coach FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE,
-    CONSTRAINT fk_ca_verifier FOREIGN KEY (verified_by) REFERENCES users(id) ON DELETE SET NULL
+    CONSTRAINT fk_ca_verifier FOREIGN KEY (verified_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_achievement_image FOREIGN KEY (image_file_id) REFERENCES files(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -154,12 +176,14 @@ CREATE TABLE assigned_workouts (
     result_distance_km DECIMAL(10,2) NULL,
     result_heart_rate INT NULL,
     result_feeling INT NULL,
+    image_file_id BIGINT NULL,
     status ENUM('pending','completed','skipped') NOT NULL DEFAULT 'pending',
     due_date DATE,
     created_at DATETIME NOT NULL DEFAULT NOW(),
     updated_at DATETIME NOT NULL DEFAULT NOW() ON UPDATE NOW(),
     FOREIGN KEY (coach_id) REFERENCES users(id),
-    FOREIGN KEY (student_id) REFERENCES users(id)
+    FOREIGN KEY (student_id) REFERENCES users(id),
+    CONSTRAINT fk_assigned_workouts_image FOREIGN KEY (image_file_id) REFERENCES files(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================

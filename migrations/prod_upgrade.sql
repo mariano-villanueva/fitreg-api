@@ -1,4 +1,8 @@
-CREATE TABLE files (
+-- Upgrade script for existing production databases
+-- Run each statement one by one. If a column already exists, skip that line.
+
+-- Files table
+CREATE TABLE IF NOT EXISTS files (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     uuid VARCHAR(36) NOT NULL UNIQUE,
     user_id BIGINT NOT NULL,
@@ -11,3 +15,7 @@ CREATE TABLE files (
     INDEX idx_files_user (user_id),
     CONSTRAINT fk_files_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Add fartlek to workout type enum
+ALTER TABLE workouts MODIFY COLUMN type ENUM('easy','tempo','intervals','long_run','race','fartlek','other') DEFAULT 'easy';
+
