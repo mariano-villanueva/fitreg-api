@@ -29,7 +29,7 @@ func (h *WorkoutHandler) ListWorkouts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.DB.Query(`
-		SELECT id, user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
+		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
 		FROM workouts
 		WHERE user_id = ?
 		ORDER BY date DESC
@@ -44,7 +44,7 @@ func (h *WorkoutHandler) ListWorkouts(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var wo models.Workout
 		var avgPace, workoutType, notes sql.NullString
-		if err := rows.Scan(&wo.ID, &wo.UserID, &wo.AssignedWorkoutID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
+		if err := rows.Scan(&wo.ID, &wo.UserID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
 			&avgPace, &wo.Calories, &wo.AvgHeartRate, &wo.Feeling, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to scan workout")
 			return
@@ -80,9 +80,9 @@ func (h *WorkoutHandler) GetWorkout(w http.ResponseWriter, r *http.Request) {
 	var wo models.Workout
 	var avgPace, workoutType, notes sql.NullString
 	err = h.DB.QueryRow(`
-		SELECT id, user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
+		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
 		FROM workouts WHERE id = ? AND user_id = ?
-	`, id, userID).Scan(&wo.ID, &wo.UserID, &wo.AssignedWorkoutID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
+	`, id, userID).Scan(&wo.ID, &wo.UserID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
 		&avgPace, &wo.Calories, &wo.AvgHeartRate, &wo.Feeling, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "Workout not found")
@@ -140,9 +140,9 @@ func (h *WorkoutHandler) CreateWorkout(w http.ResponseWriter, r *http.Request) {
 	var wo models.Workout
 	var avgPace, workoutType, notes sql.NullString
 	if err := h.DB.QueryRow(`
-		SELECT id, user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
+		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
 		FROM workouts WHERE id = ?
-	`, id).Scan(&wo.ID, &wo.UserID, &wo.AssignedWorkoutID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
+	`, id).Scan(&wo.ID, &wo.UserID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
 		&avgPace, &wo.Calories, &wo.AvgHeartRate, &wo.Feeling, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
 		logErr("fetch created workout", err)
 	}
@@ -199,9 +199,9 @@ func (h *WorkoutHandler) UpdateWorkout(w http.ResponseWriter, r *http.Request) {
 	var wo models.Workout
 	var avgPace, workoutType, notes sql.NullString
 	if err := h.DB.QueryRow(`
-		SELECT id, user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
+		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
 		FROM workouts WHERE id = ?
-	`, id).Scan(&wo.ID, &wo.UserID, &wo.AssignedWorkoutID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
+	`, id).Scan(&wo.ID, &wo.UserID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
 		&avgPace, &wo.Calories, &wo.AvgHeartRate, &wo.Feeling, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
 		logErr("fetch updated workout", err)
 	}

@@ -3,10 +3,9 @@ package models
 import "time"
 
 type Workout struct {
-	ID                int64  `json:"id"`
-	UserID            int64  `json:"user_id"`
-	AssignedWorkoutID *int64 `json:"assigned_workout_id"`
-	Date              string `json:"date"`
+	ID     int64  `json:"id"`
+	UserID int64  `json:"user_id"`
+	Date   string `json:"date"`
 	DistanceKm      float64   `json:"distance_km"`
 	DurationSeconds int       `json:"duration_seconds"`
 	AvgPace         string    `json:"avg_pace"`

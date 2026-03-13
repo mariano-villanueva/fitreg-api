@@ -898,9 +898,9 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 			notes = aw.Notes.String
 		}
 
-		if _, err := h.DB.Exec(`INSERT INTO workouts (user_id, assigned_workout_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
-			VALUES (?, ?, `+workoutDate+`, ?, ?, ?, ?, ?, NOW(), NOW())`,
-			userID, awID, dateArg, finalDistance, finalDuration, avgHR, aw.Type, notes); err != nil {
+		if _, err := h.DB.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
+			VALUES (?, `+workoutDate+`, ?, ?, ?, ?, ?, NOW(), NOW())`,
+			userID, dateArg, finalDistance, finalDuration, avgHR, aw.Type, notes); err != nil {
 			logErr("insert workout from completed assignment", err)
 		}
 	}
