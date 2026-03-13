@@ -38,8 +38,9 @@ type AssignedWorkout struct {
 	UpdatedAt         time.Time        `json:"updated_at"`
 	StudentName       string           `json:"student_name,omitempty"`
 	CoachName         string           `json:"coach_name,omitempty"`
-	Segments          []WorkoutSegment `json:"segments"`
-	ImageURL          string           `json:"image_url,omitempty"`
+	Segments           []WorkoutSegment `json:"segments"`
+	ImageURL           string           `json:"image_url,omitempty"`
+	UnreadMessageCount int              `json:"unread_message_count"`
 }
 
 type AddStudentRequest struct {

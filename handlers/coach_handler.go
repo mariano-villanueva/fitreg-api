@@ -72,7 +72,7 @@ func (h *CoachHandler) ListStudents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.DB.Query(`
-		SELECT u.id, u.name, u.email, COALESCE(u.avatar_url, '') as avatar_url
+		SELECT u.id, u.name, u.email, COALESCE(u.custom_avatar, '') as avatar_url
 		FROM users u
 		JOIN coach_students cs ON u.id = cs.student_id
 		WHERE cs.coach_id = ? AND cs.status = 'active'
@@ -244,12 +244,13 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
 			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as student_name
+			aw.created_at, aw.updated_at, u.name as student_name,
+			(SELECT COUNT(*) FROM assignment_messages am WHERE am.assigned_workout_id = aw.id AND am.sender_id != ? AND am.is_read = FALSE)
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
 		WHERE aw.coach_id = ?
 	`
-	args := []interface{}{userID}
+	args := []interface{}{userID, userID}
 
 	studentIDStr := r.URL.Query().Get("student_id")
 	if studentIDStr != "" {
@@ -333,7 +334,7 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 			&aw.ImageFileID, &aw.Status, &dueDate,
-			&aw.CreatedAt, &aw.UpdatedAt, &aw.StudentName); err != nil {
+			&aw.CreatedAt, &aw.UpdatedAt, &aw.StudentName, &aw.UnreadMessageCount); err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to scan assigned workout")
 			return
 		}
@@ -391,6 +392,11 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	if req.Title == "" {
 		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+
+	if len(req.Segments) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one segment is required")
 		return
 	}
 
@@ -597,6 +603,11 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if len(req.Segments) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one segment is required")
+		return
+	}
+
 	var dueDateVal interface{}
 	if req.DueDate != "" {
 		dueDateVal = req.DueDate
@@ -738,12 +749,13 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
 			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as coach_name
+			aw.created_at, aw.updated_at, u.name as coach_name,
+			(SELECT COUNT(*) FROM assignment_messages am WHERE am.assigned_workout_id = aw.id AND am.sender_id != ? AND am.is_read = FALSE)
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.coach_id
 		WHERE aw.student_id = ?
 	`
-	args := []interface{}{userID}
+	args := []interface{}{userID, userID}
 
 	startDate := r.URL.Query().Get("start_date")
 	endDate := r.URL.Query().Get("end_date")
@@ -769,7 +781,7 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 			&aw.ImageFileID, &aw.Status, &dueDate,
-			&aw.CreatedAt, &aw.UpdatedAt, &aw.CoachName); err != nil {
+			&aw.CreatedAt, &aw.UpdatedAt, &aw.CoachName, &aw.UnreadMessageCount); err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to scan assigned workout")
 			return
 		}

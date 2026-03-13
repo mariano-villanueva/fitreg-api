@@ -47,20 +47,20 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 		receiverID = req.ReceiverID
 		err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE), COALESCE(coach_public, FALSE) FROM users WHERE id = ?", receiverID).Scan(&receiverIsCoach, &receiverCoachPublic)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "Cannot send invitation")
+			writeError(w, http.StatusNotFound, "user_not_found")
 			return
 		}
 	} else {
 		err := h.DB.QueryRow("SELECT id, COALESCE(is_coach, FALSE), COALESCE(coach_public, FALSE) FROM users WHERE email = ?", req.ReceiverEmail).Scan(&receiverID, &receiverIsCoach, &receiverCoachPublic)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "Cannot send invitation")
+			writeError(w, http.StatusNotFound, "user_not_found")
 			return
 		}
 	}
 
 	// No self-invitation
 	if userID == receiverID {
-		writeError(w, http.StatusBadRequest, "Cannot send invitation")
+		writeError(w, http.StatusBadRequest, "cannot_invite_self")
 		return
 	}
 
@@ -71,12 +71,12 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 			logErr("check is coach for invitation", err)
 		}
 		if !isCoach {
-			writeError(w, http.StatusBadRequest, "Cannot send invitation")
+			writeError(w, http.StatusBadRequest, "not_a_coach")
 			return
 		}
 	} else if req.Type == "student_request" {
 		if !receiverIsCoach || !receiverCoachPublic {
-			writeError(w, http.StatusBadRequest, "Cannot send invitation")
+			writeError(w, http.StatusBadRequest, "receiver_not_coach")
 			return
 		}
 	} else {
@@ -95,7 +95,7 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 		logErr("check pending invitations count", err)
 	}
 	if pendingCount > 0 {
-		writeError(w, http.StatusBadRequest, "Cannot send invitation")
+		writeError(w, http.StatusBadRequest, "invitation_already_pending")
 		return
 	}
 
@@ -110,7 +110,7 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 		logErr("check active relationships count", err)
 	}
 	if activeCount > 0 {
-		writeError(w, http.StatusBadRequest, "Cannot send invitation")
+		writeError(w, http.StatusBadRequest, "already_connected")
 		return
 	}
 
@@ -126,7 +126,7 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 		logErr("check student coach count", err)
 	}
 	if studentCoachCount >= models.MaxCoachesPerStudent {
-		writeError(w, http.StatusBadRequest, "Cannot send invitation")
+		writeError(w, http.StatusBadRequest, "student_max_coaches")
 		return
 	}
 
@@ -147,7 +147,7 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 
 	// Create notification for receiver
 	var senderName, senderAvatar string
-	if err := h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(avatar_url, '') FROM users WHERE id = ?", userID).Scan(&senderName, &senderAvatar); err != nil {
+	if err := h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(custom_avatar, '') FROM users WHERE id = ?", userID).Scan(&senderName, &senderAvatar); err != nil {
 		logErr("fetch sender info for invitation notification", err)
 	}
 
@@ -176,7 +176,7 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 	var inv models.Invitation
 	if err := h.DB.QueryRow(`
 		SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
-			COALESCE(s.name, ''), COALESCE(s.avatar_url, ''), COALESCE(rv.name, ''), COALESCE(rv.avatar_url, '')
+			COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
 		FROM invitations i
 		JOIN users s ON s.id = i.sender_id
 		JOIN users rv ON rv.id = i.receiver_id
@@ -210,7 +210,7 @@ func (h *InvitationHandler) ListInvitations(w http.ResponseWriter, r *http.Reque
 
 	query := `
 		SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
-			COALESCE(s.name, ''), COALESCE(s.avatar_url, ''), COALESCE(rv.name, ''), COALESCE(rv.avatar_url, '')
+			COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
 		FROM invitations i
 		JOIN users s ON s.id = i.sender_id
 		JOIN users rv ON rv.id = i.receiver_id
@@ -275,7 +275,7 @@ func (h *InvitationHandler) GetInvitation(w http.ResponseWriter, r *http.Request
 	var inv models.Invitation
 	err = h.DB.QueryRow(`
 		SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
-			COALESCE(s.name, ''), COALESCE(s.avatar_url, ''), COALESCE(rv.name, ''), COALESCE(rv.avatar_url, '')
+			COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
 		FROM invitations i
 		JOIN users s ON s.id = i.sender_id
 		JOIN users rv ON rv.id = i.receiver_id

@@ -43,6 +43,11 @@ func (h *TemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.Segments) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one segment is required")
+		return
+	}
+
 	var expectedFieldsJSON []byte
 	var err error
 	if len(req.ExpectedFields) > 0 {
@@ -272,6 +277,11 @@ func (h *TemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	if req.Title == "" {
 		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+
+	if len(req.Segments) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one segment is required")
 		return
 	}
 

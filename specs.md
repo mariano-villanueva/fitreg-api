@@ -78,6 +78,7 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 | email | VARCHAR(255) | |
 | name | VARCHAR(255) | |
 | avatar_url | TEXT | Google profile picture |
+| custom_avatar | MEDIUMTEXT | Base64 data URI (nullable). Takes priority over avatar_url in all responses |
 | sex | ENUM('M','F','other') | Nullable |
 | birth_date | DATE | Nullable |
 | age | — | Computed from birth_date in Go (not a DB column) |
@@ -99,7 +100,6 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 |--------|------|-------|
 | id | BIGINT PK AUTO_INCREMENT | |
 | user_id | BIGINT FK→users | |
-| assigned_workout_id | BIGINT NULL | FK reference to assignment that created this workout |
 | date | DATE | Required |
 | distance_km | DECIMAL(6,2) DEFAULT 0 | |
 | duration_seconds | INT DEFAULT 0 | |
@@ -109,6 +109,26 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 | type | ENUM('easy','tempo','intervals','long_run','race','fartlek','other') | |
 | notes | TEXT | |
 | created_at, updated_at | TIMESTAMP | |
+
+Workouts include a `segments` array in all responses (list, get, create, update). At least one segment is required on create and update.
+
+### workout_segments (personal workout structure)
+| Column | Type | Notes |
+|--------|------|-------|
+| id | BIGINT PK AUTO_INCREMENT | |
+| workout_id | BIGINT FK→workouts (CASCADE) | |
+| order_index | INT DEFAULT 0 | Display order |
+| segment_type | ENUM('simple','interval') DEFAULT 'simple' | |
+| repetitions | INT DEFAULT 1 | For intervals |
+| value | DECIMAL(10,2) | Simple block value |
+| unit | VARCHAR(10) | Simple block unit (km/m/min/sec) |
+| intensity | VARCHAR(20) | Simple block intensity |
+| work_value | DECIMAL(10,2) | Interval work value |
+| work_unit | VARCHAR(10) | |
+| work_intensity | VARCHAR(20) | |
+| rest_value | DECIMAL(10,2) | Interval rest value |
+| rest_unit | VARCHAR(10) | |
+| rest_intensity | VARCHAR(20) | |
 
 ### coach_students
 | Column | Type | Notes |
@@ -236,8 +256,10 @@ Load with: `export $(cat .env | xargs) && go run main.go`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/me | Get authenticated user profile (includes `has_coach` field) |
+| GET | /api/me | Get authenticated user profile (includes `has_coach` field; if has_coach, also includes `coach_id`, `coach_name`, `coach_avatar`) |
 | PUT | /api/me | Update profile (name, sex, birth_date, weight_kg, height_cm, language). Note: `is_coach` is NOT settable here |
+| POST | /api/me/avatar | Upload custom avatar `{ image: string }` — base64 data URI, max 500KB |
+| DELETE | /api/me/avatar | Remove custom avatar (reverts to Google photo) |
 
 ### Coach Request (JWT required)
 
@@ -263,7 +285,6 @@ Coach activation flow:
 | PUT | /api/workouts/{id} | Update workout (owner only) |
 | DELETE | /api/workouts/{id} | Delete workout (owner only) |
 
-Workouts include `assigned_workout_id` when auto-created from assignment completion.
 
 ### Coach - Students (JWT + is_coach required)
 
@@ -303,6 +324,15 @@ Workouts include `assigned_workout_id` when auto-created from assignment complet
 
 Invitation types: `coach_invite` (coach invites student), `student_request` (student requests coach).
 Accepting creates a coach_students record. Notifications sent on create, accept, reject.
+
+Invitation creation error codes (400/404):
+- `user_not_found` — receiver not found by ID or email
+- `cannot_invite_self` — sender and receiver are the same user
+- `not_a_coach` — sender is not a coach (for coach_invite type)
+- `receiver_not_coach` — receiver is not a public coach (for student_request type)
+- `invitation_already_pending` — a pending invitation already exists between these users
+- `already_connected` — an active coach_students relationship already exists
+- `student_max_coaches` — student already has the maximum number of coaches
 
 ### Notifications (JWT required)
 
@@ -390,23 +420,27 @@ Notifications use i18n keys for title and body, with metadata for interpolation.
 ### User
 ```go
 type User struct {
-    ID int64; GoogleID, Email, Name, AvatarURL string
+    ID int64; GoogleID, Email, Name, AvatarURL, CustomAvatar string
     Sex, BirthDate string; WeightKg float64; HeightCm int
     Language string; IsCoach, IsAdmin bool
     CoachDescription string; CoachPublic bool
     CoachLocality, CoachLevel string  // CoachLevel: comma-separated, e.g. "beginner,advanced"
     OnboardingCompleted bool
-    HasCoach bool  // Computed: true if user has active coach_students record as student
+    HasCoach bool       // Computed: true if user has active coach_students record as student
+    CoachID   int64     // omitempty; set when HasCoach=true
+    CoachName string    // omitempty; set when HasCoach=true
+    CoachAvatar string  // omitempty; set when HasCoach=true
 }
 ```
 
 ### Workout
 ```go
 type Workout struct {
-    ID, UserID int64; AssignedWorkoutID *int64
+    ID, UserID int64
     Date string; DistanceKm float64; DurationSeconds int
     AvgPace string; Calories, AvgHeartRate int
-    Type, Notes string
+    Feeling *int; Type, Notes string
+    Segments []WorkoutSegment
 }
 ```
 
@@ -492,11 +526,15 @@ Both are defined in `workout_handler.go` and shared across all handlers. Format:
 - Coach request sends `level` as a JSON array of strings; stored as comma-separated in DB
 - `is_coach` is NOT modifiable via profile update endpoint
 - Coach request creates notifications for ALL admin users; first admin to act resolves all
-- Completing an assignment auto-creates a workout record with `assigned_workout_id` FK
+- Completing an assignment auto-creates a workout record
 - `result_feeling` (1-10) is always required when completing an assignment
+- Personal workouts now support segments (`workout_segments` table, same structure as `assigned_workout_segments`). At least one segment is required on create/update
+- Templates also require at least one segment on create/update
 - Assigned workout listing supports `?status=pending|finished` filter and `?page=N&limit=N` pagination
 - Coach directory is paginated with search (name + description), locality, level (uses `FIND_IN_SET` for comma-separated matching), and sort (rating/name/newest/oldest) filters
 - `has_coach` is computed at login and profile fetch by checking `coach_students` for an active record as student
+- When `has_coach = true`, profile response includes `coach_id`, `coach_name`, `coach_avatar` (from `custom_avatar`)
+- `custom_avatar` stores base64 data URI (max 500KB). Used in all avatar fields across coaches, invitations, and notifications instead of `avatar_url`
 - Approving a coach request sets both `is_coach = TRUE` and `coach_public = TRUE`
 - Notification titles and bodies are i18n keys; metadata provides interpolation values
 - Notification actions (approve/reject) are resolved inline via `POST /api/notifications/{id}/action`

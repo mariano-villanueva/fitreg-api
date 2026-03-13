@@ -91,7 +91,7 @@ func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request
 	}
 
 	query := `
-		SELECT u.id, u.name, COALESCE(u.avatar_url, '') as avatar_url,
+		SELECT u.id, u.name, COALESCE(u.custom_avatar, '') as avatar_url,
 			COALESCE(u.coach_description, '') as coach_description,
 			COALESCE(u.coach_locality, '') as coach_locality,
 			COALESCE(u.coach_level, '') as coach_level,
@@ -143,7 +143,7 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 	var profile models.CoachPublicProfile
 	var avatarURL, description sql.NullString
 	err = h.DB.QueryRow(`
-		SELECT u.id, u.name, u.avatar_url, u.coach_description,
+		SELECT u.id, u.name, u.custom_avatar, u.coach_description,
 			COALESCE(AVG(cr.rating), 0) as avg_rating,
 			COUNT(cr.id) as rating_count
 		FROM users u
@@ -161,7 +161,7 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "Failed to fetch coach profile")
 		return
 	}
-	if avatarURL.Valid {
+	if avatarURL.Valid && avatarURL.String != "" {
 		profile.AvatarURL = avatarURL.String
 	}
 	if description.Valid {

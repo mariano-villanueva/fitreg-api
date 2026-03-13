@@ -29,10 +29,10 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 
 	var row userRow
 	err := h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, custom_avatar, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE id = ?
 	`, userID).Scan(
-		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
+		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL, &row.CustomAvatar,
 		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -50,6 +50,9 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		logErr("check has coach for profile", err)
 	}
 	u.HasCoach = hasCoach
+	if hasCoach {
+		fillCoachInfo(h.DB, userID, &u)
+	}
 	writeJSON(w, http.StatusOK, u)
 }
 
@@ -86,10 +89,10 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	var row userRow
 	err = h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, custom_avatar, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE id = ?
 	`, userID).Scan(
-		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
+		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL, &row.CustomAvatar,
 		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err != nil {
@@ -153,7 +156,7 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 
 	// Get requester name
 	var requesterName, requesterAvatar string
-	if err := h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(avatar_url, '') FROM users WHERE id = ?", userID).Scan(&requesterName, &requesterAvatar); err != nil {
+	if err := h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(custom_avatar, '') FROM users WHERE id = ?", userID).Scan(&requesterName, &requesterAvatar); err != nil {
 		logErr("fetch requester name for coach request", err)
 	}
 
@@ -234,4 +237,59 @@ func (h *UserHandler) GetCoachRequestStatus(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "none"})
+}
+
+const maxAvatarSize = 500 * 1024 // 500KB base64
+
+func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req struct {
+		Image string `json:"image"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Image == "" {
+		writeError(w, http.StatusBadRequest, "image is required")
+		return
+	}
+
+	if !strings.HasPrefix(req.Image, "data:image/") {
+		writeError(w, http.StatusBadRequest, "image must be a base64 data URI")
+		return
+	}
+
+	if len(req.Image) > maxAvatarSize {
+		writeError(w, http.StatusBadRequest, "image too large (max 500KB)")
+		return
+	}
+
+	if _, err := h.DB.Exec("UPDATE users SET custom_avatar = ?, updated_at = NOW() WHERE id = ?", req.Image, userID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to save avatar")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Avatar updated"})
+}
+
+func (h *UserHandler) DeleteAvatar(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	if _, err := h.DB.Exec("UPDATE users SET custom_avatar = NULL, updated_at = NOW() WHERE id = ?", userID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to delete avatar")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Avatar removed"})
 }

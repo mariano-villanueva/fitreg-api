@@ -1,29 +1,11 @@
--- FitReg complete schema (consolidated)
--- Run on a fresh database: mysql -u root -p fitreg < migrations/001_schema.sql
-
--- Drop all tables in reverse dependency order
-SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS workout_template_segments;
-DROP TABLE IF EXISTS workout_templates;
-DROP TABLE IF EXISTS notification_preferences;
-DROP TABLE IF EXISTS notifications;
-DROP TABLE IF EXISTS assignment_messages;
-DROP TABLE IF EXISTS assigned_workout_segments;
-DROP TABLE IF EXISTS assigned_workouts;
-DROP TABLE IF EXISTS coach_ratings;
-DROP TABLE IF EXISTS coach_achievements;
-DROP TABLE IF EXISTS coach_students;
-DROP TABLE IF EXISTS invitations;
-DROP TABLE IF EXISTS workout_segments;
-DROP TABLE IF EXISTS workouts;
-DROP TABLE IF EXISTS files;
-DROP TABLE IF EXISTS users;
-SET FOREIGN_KEY_CHECKS = 1;
+-- FitReg production schema — create from scratch
+-- Safe to run on a fresh empty database (no DROPs)
+-- Usage: mysql -u USER -p DATABASE < migrations/002_prod_schema.sql
 
 -- ============================================================
 -- USERS
 -- ============================================================
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     google_id VARCHAR(255) NOT NULL UNIQUE,
     email VARCHAR(255) NOT NULL,
@@ -51,7 +33,7 @@ CREATE TABLE users (
 -- ============================================================
 -- FILES
 -- ============================================================
-CREATE TABLE files (
+CREATE TABLE IF NOT EXISTS files (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     uuid VARCHAR(36) NOT NULL UNIQUE,
     user_id BIGINT NOT NULL,
@@ -68,7 +50,7 @@ CREATE TABLE files (
 -- ============================================================
 -- WORKOUTS
 -- ============================================================
-CREATE TABLE workouts (
+CREATE TABLE IF NOT EXISTS workouts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,
     date DATE NOT NULL,
@@ -88,9 +70,9 @@ CREATE TABLE workouts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- WORKOUT SEGMENTS
+-- WORKOUT SEGMENTS (personal workouts)
 -- ============================================================
-CREATE TABLE workout_segments (
+CREATE TABLE IF NOT EXISTS workout_segments (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     workout_id BIGINT NOT NULL,
     order_index INT NOT NULL DEFAULT 0,
@@ -111,7 +93,7 @@ CREATE TABLE workout_segments (
 -- ============================================================
 -- INVITATIONS
 -- ============================================================
-CREATE TABLE invitations (
+CREATE TABLE IF NOT EXISTS invitations (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     type ENUM('coach_invite', 'student_request') NOT NULL,
     sender_id BIGINT NOT NULL,
@@ -129,7 +111,7 @@ CREATE TABLE invitations (
 -- ============================================================
 -- COACH - STUDENTS
 -- ============================================================
-CREATE TABLE coach_students (
+CREATE TABLE IF NOT EXISTS coach_students (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     coach_id BIGINT NOT NULL,
     student_id BIGINT NOT NULL,
@@ -146,7 +128,7 @@ CREATE TABLE coach_students (
 -- ============================================================
 -- COACH ACHIEVEMENTS
 -- ============================================================
-CREATE TABLE coach_achievements (
+CREATE TABLE IF NOT EXISTS coach_achievements (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     coach_id BIGINT NOT NULL,
     event_name VARCHAR(255) NOT NULL,
@@ -171,7 +153,7 @@ CREATE TABLE coach_achievements (
 -- ============================================================
 -- COACH RATINGS
 -- ============================================================
-CREATE TABLE coach_ratings (
+CREATE TABLE IF NOT EXISTS coach_ratings (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     coach_id BIGINT NOT NULL,
     student_id BIGINT NOT NULL,
@@ -187,7 +169,7 @@ CREATE TABLE coach_ratings (
 -- ============================================================
 -- ASSIGNED WORKOUTS
 -- ============================================================
-CREATE TABLE assigned_workouts (
+CREATE TABLE IF NOT EXISTS assigned_workouts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     coach_id BIGINT NOT NULL,
     student_id BIGINT NOT NULL,
@@ -215,7 +197,7 @@ CREATE TABLE assigned_workouts (
 -- ============================================================
 -- ASSIGNED WORKOUT SEGMENTS
 -- ============================================================
-CREATE TABLE assigned_workout_segments (
+CREATE TABLE IF NOT EXISTS assigned_workout_segments (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     assigned_workout_id BIGINT NOT NULL,
     order_index INT NOT NULL DEFAULT 0,
@@ -236,7 +218,7 @@ CREATE TABLE assigned_workout_segments (
 -- ============================================================
 -- ASSIGNMENT MESSAGES
 -- ============================================================
-CREATE TABLE assignment_messages (
+CREATE TABLE IF NOT EXISTS assignment_messages (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     assigned_workout_id BIGINT NOT NULL,
     sender_id BIGINT NOT NULL,
@@ -251,7 +233,7 @@ CREATE TABLE assignment_messages (
 -- ============================================================
 -- NOTIFICATIONS
 -- ============================================================
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,
     type VARCHAR(50) NOT NULL,
@@ -268,7 +250,7 @@ CREATE TABLE notifications (
 -- ============================================================
 -- NOTIFICATION PREFERENCES
 -- ============================================================
-CREATE TABLE notification_preferences (
+CREATE TABLE IF NOT EXISTS notification_preferences (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,
     workout_assigned BOOLEAN NOT NULL DEFAULT TRUE,
@@ -281,7 +263,7 @@ CREATE TABLE notification_preferences (
 -- ============================================================
 -- WORKOUT TEMPLATES
 -- ============================================================
-CREATE TABLE workout_templates (
+CREATE TABLE IF NOT EXISTS workout_templates (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     coach_id BIGINT NOT NULL,
     title VARCHAR(255) NOT NULL,
@@ -295,7 +277,7 @@ CREATE TABLE workout_templates (
     INDEX idx_wt_coach (coach_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE workout_template_segments (
+CREATE TABLE IF NOT EXISTS workout_template_segments (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     template_id BIGINT NOT NULL,
     order_index INT NOT NULL DEFAULT 0,

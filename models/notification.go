@@ -28,11 +28,13 @@ type NotificationPreferences struct {
 	UserID                    int64 `json:"user_id"`
 	WorkoutAssigned           bool  `json:"workout_assigned"`
 	WorkoutCompletedOrSkipped bool  `json:"workout_completed_or_skipped"`
+	AssignmentMessage         bool  `json:"assignment_message"`
 }
 
 type UpdateNotificationPreferencesRequest struct {
 	WorkoutAssigned           bool `json:"workout_assigned"`
 	WorkoutCompletedOrSkipped bool `json:"workout_completed_or_skipped"`
+	AssignmentMessage         bool `json:"assignment_message"`
 }
 
 type NotificationActionRequest struct {
