@@ -25,6 +25,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	adm := handlers.NewAdminHandler(db, nh)
 	fh := handlers.NewFileHandler(db, store)
 	th := handlers.NewTemplateHandler(db)
+	amh := handlers.NewAssignmentMessageHandler(db, nh)
 
 	// Auth routes (public)
 	mux.HandleFunc("/api/auth/google", func(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +43,18 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 			uh.GetProfile(w, r)
 		case http.MethodPut:
 			uh.UpdateProfile(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Avatar routes
+	mux.HandleFunc("/api/me/avatar", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			uh.UploadAvatar(w, r)
+		case http.MethodDelete:
+			uh.DeleteAvatar(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -407,6 +420,35 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 		}
 		if r.Method == http.MethodDelete {
 			fh.Delete(w, r)
+		} else {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Assignment messages
+	mux.HandleFunc("/api/assignment-messages/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/read") {
+			if r.Method == http.MethodPut {
+				amh.MarkRead(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			amh.ListMessages(w, r)
+		case http.MethodPost:
+			amh.SendMessage(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Assignment detail (both coach and student)
+	mux.HandleFunc("/api/assigned-workout-detail/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			amh.GetAssignedWorkoutDetail(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
