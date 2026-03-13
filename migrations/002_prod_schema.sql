@@ -1,5 +1,5 @@
--- FitReg production schema
--- Safe to run on a fresh database (CREATE TABLE IF NOT EXISTS, no DROPs)
+-- FitReg production schema — create from scratch
+-- Safe to run on a fresh empty database (no DROPs)
 -- Usage: mysql -u USER -p DATABASE < migrations/002_prod_schema.sql
 
 -- ============================================================
@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     avatar_url TEXT,
+    custom_avatar MEDIUMTEXT,
     sex ENUM('M','F','other'),
     weight_kg DECIMAL(5,2),
     birth_date DATE NULL,
@@ -66,6 +67,27 @@ CREATE TABLE IF NOT EXISTS workouts (
     INDEX idx_workouts_user_id (user_id),
     INDEX idx_workouts_date (date),
     CONSTRAINT fk_workouts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- WORKOUT SEGMENTS (personal workouts)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS workout_segments (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    workout_id BIGINT NOT NULL,
+    order_index INT NOT NULL DEFAULT 0,
+    segment_type ENUM('simple','interval') NOT NULL DEFAULT 'simple',
+    repetitions INT DEFAULT 1,
+    value DECIMAL(10,2),
+    unit VARCHAR(10),
+    intensity VARCHAR(20),
+    work_value DECIMAL(10,2),
+    work_unit VARCHAR(10),
+    work_intensity VARCHAR(20),
+    rest_value DECIMAL(10,2),
+    rest_unit VARCHAR(10),
+    rest_intensity VARCHAR(20),
+    FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -194,6 +216,21 @@ CREATE TABLE IF NOT EXISTS assigned_workout_segments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
+-- ASSIGNMENT MESSAGES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS assignment_messages (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    assigned_workout_id BIGINT NOT NULL,
+    sender_id BIGINT NOT NULL,
+    body TEXT NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at DATETIME NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (assigned_workout_id) REFERENCES assigned_workouts(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_id) REFERENCES users(id),
+    INDEX idx_assignment_messages_unread (assigned_workout_id, sender_id, is_read)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
 -- NOTIFICATIONS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS notifications (
@@ -218,6 +255,7 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     user_id BIGINT NOT NULL,
     workout_assigned BOOLEAN NOT NULL DEFAULT TRUE,
     workout_completed_or_skipped BOOLEAN NOT NULL DEFAULT TRUE,
+    assignment_message BOOLEAN NOT NULL DEFAULT TRUE,
     FOREIGN KEY (user_id) REFERENCES users(id),
     UNIQUE KEY uk_user_prefs (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -256,20 +294,3 @@ CREATE TABLE IF NOT EXISTS workout_template_segments (
     rest_intensity VARCHAR(20),
     FOREIGN KEY (template_id) REFERENCES workout_templates(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Assignment messages (2026-03-13)
-CREATE TABLE IF NOT EXISTS assignment_messages (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    assigned_workout_id BIGINT NOT NULL,
-    sender_id BIGINT NOT NULL,
-    body TEXT NOT NULL,
-    is_read BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at DATETIME NOT NULL DEFAULT NOW(),
-    FOREIGN KEY (assigned_workout_id) REFERENCES assigned_workouts(id) ON DELETE CASCADE,
-    FOREIGN KEY (sender_id) REFERENCES users(id),
-    INDEX idx_assignment_messages_unread (assigned_workout_id, sender_id, is_read)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- MySQL does not support ADD COLUMN IF NOT EXISTS; use a procedure or run manually.
--- If column already exists, this will error — safe to ignore.
-ALTER TABLE notification_preferences ADD COLUMN assignment_message BOOLEAN NOT NULL DEFAULT TRUE;
