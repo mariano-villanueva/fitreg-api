@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/fitreg/api/middleware"
@@ -61,12 +62,76 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.DB.Query(`
-		SELECT id, email, name, COALESCE(avatar_url, '') as avatar_url,
+	// Parse query params
+	search := r.URL.Query().Get("search")
+	role := r.URL.Query().Get("role")
+	sortCol := r.URL.Query().Get("sort")
+	sortOrder := r.URL.Query().Get("order")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	// Defaults and clamping
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+
+	// Whitelist sort column
+	allowedSort := map[string]string{
+		"name":       "name",
+		"email":      "email",
+		"created_at": "created_at",
+	}
+	if _, ok := allowedSort[sortCol]; !ok {
+		sortCol = "created_at"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+
+	// Build dynamic WHERE
+	where := "WHERE 1=1"
+	args := []interface{}{}
+
+	if search != "" {
+		where += " AND (name LIKE ? OR email LIKE ?)"
+		pattern := "%" + search + "%"
+		args = append(args, pattern, pattern)
+	}
+
+	switch role {
+	case "athlete":
+		where += " AND COALESCE(is_coach, FALSE) = FALSE AND COALESCE(is_admin, FALSE) = FALSE"
+	case "coach":
+		where += " AND COALESCE(is_coach, FALSE) = TRUE"
+	case "admin":
+		where += " AND COALESCE(is_admin, FALSE) = TRUE"
+	}
+
+	// Count total matching users
+	var total int
+	countArgs := make([]interface{}, len(args))
+	copy(countArgs, args)
+	if err := h.DB.QueryRow("SELECT COUNT(*) FROM users "+where, countArgs...).Scan(&total); err != nil {
+		logErr("count admin users", err)
+		writeError(w, http.StatusInternalServerError, "Failed to count users")
+		return
+	}
+
+	// Paginated SELECT
+	offset := (page - 1) * limit
+	args = append(args, limit, offset)
+	query := `
+		SELECT id, email, COALESCE(name, '') as name,
+			COALESCE(custom_avatar, avatar_url, '') as avatar_url,
 			COALESCE(is_coach, FALSE), COALESCE(is_admin, FALSE), created_at
-		FROM users ORDER BY created_at DESC
-	`)
+		FROM users ` + where + ` ORDER BY ` + sortCol + ` ` + sortOrder + ` LIMIT ? OFFSET ?`
+
+	rows, err := h.DB.Query(query, args...)
 	if err != nil {
+		logErr("list admin users", err)
 		writeError(w, http.StatusInternalServerError, "Failed to fetch users")
 		return
 	}
@@ -93,7 +158,12 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		users = append(users, u)
 	}
 
-	writeJSON(w, http.StatusOK, users)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"users": users,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
