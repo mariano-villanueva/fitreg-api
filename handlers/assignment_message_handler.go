@@ -177,7 +177,7 @@ func (h *AssignmentMessageHandler) SendMessage(w http.ResponseWriter, r *http.Re
 
 	notifMeta := map[string]interface{}{
 		"assigned_workout_id": awID,
-		"title":              title,
+		"workout_title":      title,
 		"sender_id":          userID,
 		"sender_name":        m.SenderName,
 	}

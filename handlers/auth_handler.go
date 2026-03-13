@@ -120,6 +120,7 @@ type userRow struct {
 	Email               string          `json:"email"`
 	Name                string          `json:"name"`
 	AvatarURL           sql.NullString  `json:"-"`
+	CustomAvatar        sql.NullString  `json:"-"`
 	Sex                 sql.NullString  `json:"-"`
 	BirthDate           sql.NullString  `json:"-"`
 	WeightKg            sql.NullFloat64 `json:"-"`
@@ -140,6 +141,7 @@ type userJSON struct {
 	Email               string    `json:"email"`
 	Name                string    `json:"name"`
 	AvatarURL           string    `json:"avatar_url"`
+	CustomAvatar        string    `json:"custom_avatar"`
 	Sex                 string    `json:"sex"`
 	BirthDate           string    `json:"birth_date"`
 	Age                 int       `json:"age"`
@@ -152,6 +154,9 @@ type userJSON struct {
 	CoachPublic         bool      `json:"coach_public"`
 	OnboardingCompleted bool      `json:"onboarding_completed"`
 	HasCoach            bool      `json:"has_coach"`
+	CoachID             int64     `json:"coach_id,omitempty"`
+	CoachName           string    `json:"coach_name,omitempty"`
+	CoachAvatar         string    `json:"coach_avatar,omitempty"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -166,8 +171,9 @@ func rowToJSON(row userRow) userJSON {
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
 	}
-	if row.AvatarURL.Valid {
-		u.AvatarURL = row.AvatarURL.String
+	if row.CustomAvatar.Valid {
+		u.CustomAvatar = row.CustomAvatar.String
+		u.AvatarURL = row.CustomAvatar.String
 	}
 	if row.Sex.Valid {
 		u.Sex = row.Sex.String
@@ -207,10 +213,10 @@ func rowToJSON(row userRow) userJSON {
 func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, error) {
 	var row userRow
 	err := h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, custom_avatar, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE google_id = ?
 	`, tokenInfo.Sub).Scan(
-		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
+		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL, &row.CustomAvatar,
 		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
 	)
 
@@ -231,6 +237,9 @@ func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, e
 			logErr("check has coach on login", err)
 		}
 		u.HasCoach = hasCoach
+		if hasCoach {
+			fillCoachInfo(h.DB, row.ID, &u)
+		}
 		return &u, nil
 	}
 
@@ -251,10 +260,10 @@ func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, e
 		logErr("get last insert id for new user", err)
 	}
 	err = h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
+		SELECT id, google_id, email, name, avatar_url, custom_avatar, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
 		FROM users WHERE id = ?
 	`, id).Scan(
-		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL,
+		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL, &row.CustomAvatar,
 		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
 	)
 	if err != nil {
@@ -263,6 +272,28 @@ func (h *AuthHandler) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*userJSON, e
 
 	u := rowToJSON(row)
 	return &u, nil
+}
+
+func fillCoachInfo(db *sql.DB, studentID int64, u *userJSON) {
+	var coachID int64
+	var coachName string
+	var coachAvatar sql.NullString
+	err := db.QueryRow(`
+		SELECT u.id, u.name, COALESCE(u.custom_avatar, '')
+		FROM coach_students cs
+		JOIN users u ON u.id = cs.coach_id
+		WHERE cs.student_id = ? AND cs.status = 'active'
+		LIMIT 1
+	`, studentID).Scan(&coachID, &coachName, &coachAvatar)
+	if err != nil {
+		logErr("fetch coach info for user", err)
+		return
+	}
+	u.CoachID = coachID
+	u.CoachName = coachName
+	if coachAvatar.Valid {
+		u.CoachAvatar = coachAvatar.String
+	}
 }
 
 func (h *AuthHandler) generateJWT(userID int64, email string) (string, error) {

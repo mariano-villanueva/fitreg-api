@@ -270,4 +270,6 @@ CREATE TABLE IF NOT EXISTS assignment_messages (
     INDEX idx_assignment_messages_unread (assigned_workout_id, sender_id, is_read)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS assignment_message BOOLEAN NOT NULL DEFAULT TRUE;
+-- MySQL does not support ADD COLUMN IF NOT EXISTS; use a procedure or run manually.
+-- If column already exists, this will error — safe to ignore.
+ALTER TABLE notification_preferences ADD COLUMN assignment_message BOOLEAN NOT NULL DEFAULT TRUE;
