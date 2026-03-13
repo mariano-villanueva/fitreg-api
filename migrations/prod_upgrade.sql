@@ -41,3 +41,6 @@ CREATE TABLE IF NOT EXISTS workout_segments (
     FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Add assignment_message to notification_preferences
+-- If this errors with "Duplicate column name", the column already exists — safe to ignore.
+ALTER TABLE notification_preferences ADD COLUMN assignment_message BOOLEAN NOT NULL DEFAULT TRUE;
