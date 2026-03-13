@@ -24,6 +24,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	rth := handlers.NewRatingHandler(db)
 	adm := handlers.NewAdminHandler(db, nh)
 	fh := handlers.NewFileHandler(db, store)
+	th := handlers.NewTemplateHandler(db)
 
 	// Auth routes (public)
 	mux.HandleFunc("/api/auth/google", func(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +106,31 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 			return
 		}
 		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+	})
+
+	// Coach template routes
+	mux.HandleFunc("/api/coach/templates", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			th.List(w, r)
+		case http.MethodPost:
+			th.Create(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/coach/templates/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			th.Get(w, r)
+		case http.MethodPut:
+			th.Update(w, r)
+		case http.MethodDelete:
+			th.Delete(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
 	})
 
 	// Coach assigned workouts routes
