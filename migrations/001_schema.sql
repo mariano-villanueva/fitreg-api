@@ -3,6 +3,8 @@
 
 -- Drop all tables in reverse dependency order
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS workout_template_segments;
+DROP TABLE IF EXISTS workout_templates;
 DROP TABLE IF EXISTS notification_preferences;
 DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS assigned_workout_segments;
@@ -234,4 +236,39 @@ CREATE TABLE notification_preferences (
     workout_completed_or_skipped BOOLEAN NOT NULL DEFAULT TRUE,
     FOREIGN KEY (user_id) REFERENCES users(id),
     UNIQUE KEY uk_user_prefs (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- WORKOUT TEMPLATES
+-- ============================================================
+CREATE TABLE workout_templates (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    coach_id BIGINT NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50),
+    notes TEXT,
+    expected_fields JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT NOW(),
+    updated_at DATETIME NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+    FOREIGN KEY (coach_id) REFERENCES users(id),
+    INDEX idx_wt_coach (coach_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE workout_template_segments (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    template_id BIGINT NOT NULL,
+    order_index INT NOT NULL DEFAULT 0,
+    segment_type ENUM('simple','interval') NOT NULL DEFAULT 'simple',
+    repetitions INT DEFAULT 1,
+    value DECIMAL(10,2),
+    unit VARCHAR(10),
+    intensity VARCHAR(20),
+    work_value DECIMAL(10,2),
+    work_unit VARCHAR(10),
+    work_intensity VARCHAR(20),
+    rest_value DECIMAL(10,2),
+    rest_unit VARCHAR(10),
+    rest_intensity VARCHAR(20),
+    FOREIGN KEY (template_id) REFERENCES workout_templates(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
