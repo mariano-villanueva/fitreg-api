@@ -12,7 +12,7 @@ import (
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/storage"
+	"github.com/fitreg/api/providers/storage"
 )
 
 const maxFileSize = 5 << 20 // 5MB
