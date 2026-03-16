@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
@@ -287,21 +285,5 @@ func (h *WorkoutHandler) fetchWorkoutSegments(workoutID int64) []models.WorkoutS
 		segments = append(segments, s)
 	}
 	return segments
-}
-
-// extractID parses the numeric ID from a URL path given a prefix.
-func extractID(path, prefix string) (int64, error) {
-	s := strings.TrimPrefix(path, prefix)
-	if idx := strings.Index(s, "/"); idx != -1 {
-		s = s[:idx]
-	}
-	return strconv.ParseInt(s, 10, 64)
-}
-
-func truncateDate(s string) string {
-	if len(s) >= 10 {
-		return s[:10]
-	}
-	return s
 }
 
