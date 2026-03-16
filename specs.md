@@ -151,7 +151,7 @@ Workouts include a `segments` array in all responses (list, get, create, update)
 | student_id | BIGINT FK→users | |
 | title | VARCHAR(255) | Required |
 | description | TEXT | |
-| type | ENUM('easy','tempo','intervals','long_run','race','fartlek','other') | |
+| type | VARCHAR(50) — common values: easy, tempo, intervals, long_run, long, race, fartlek, hills, recovery, other | |
 | distance_km | DECIMAL(6,2) | |
 | duration_seconds | INT | |
 | notes | TEXT | |
@@ -294,6 +294,40 @@ Coach activation flow:
 | POST | /api/coach/students | Add student by email `{ email }` → 201 |
 | DELETE | /api/coach/students/{id} | Remove student |
 | GET | /api/coach/students/{id}/workouts | View student's personal workouts |
+
+### Coach - Daily Summary (JWT + is_coach required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/coach/daily-summary?date=YYYY-MM-DD | Returns all active students with their assigned workout for the given date |
+
+- `date` is required. Returns `400` if omitted or not a valid `YYYY-MM-DD` string.
+- Students without a workout that day have `assigned_workout: null`.
+- If a student has multiple workouts on the same day, returns the most recent by `created_at`.
+- Segments are loaded in a second pass (N+1, acceptable at this scale).
+
+Response shape:
+```json
+[
+  {
+    "student_id": 42,
+    "student_name": "María López",
+    "student_avatar": "...",
+    "assigned_workout": {
+      "id": 101, "title": "Intervals 5×1km", "type": "intervals",
+      "distance_km": 5.0, "duration_seconds": 1800,
+      "description": "...", "notes": "...", "status": "completed",
+      "due_date": "2026-03-16",
+      "result_time_seconds": 1710, "result_distance_km": 5.1,
+      "result_heart_rate": 172, "result_feeling": 8,
+      "segments": [...]
+    }
+  },
+  { "student_id": 55, "student_name": "Juan Pérez", "student_avatar": null, "assigned_workout": null }
+]
+```
+
+Implementation: `GetDailySummary` in `handlers/coach_handler.go`. Uses `JOIN users` + `LEFT JOIN assigned_workouts` with dedup via `seen` map in Go.
 
 ### Coach - Assigned Workouts (JWT + is_coach required)
 
