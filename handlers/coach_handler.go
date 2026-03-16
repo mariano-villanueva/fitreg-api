@@ -992,6 +992,7 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 		ResultDistKm    *float64                `json:"result_distance_km"`
 		ResultHR        *int                    `json:"result_heart_rate"`
 		ResultFeeling   *int                    `json:"result_feeling"`
+		DueDate         string                  `json:"due_date"`
 		Segments        []models.WorkoutSegment `json:"segments"`
 	}
 
@@ -1009,9 +1010,9 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 			aw.id, aw.title, COALESCE(aw.type, ''), aw.distance_km, aw.duration_seconds,
 			COALESCE(aw.description, ''), COALESCE(aw.notes, ''), aw.status,
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.created_at
+			aw.due_date, aw.created_at
 		FROM coach_students cs
-		LEFT JOIN users u ON u.id = cs.student_id
+		JOIN users u ON u.id = cs.student_id
 		LEFT JOIN assigned_workouts aw
 			ON aw.student_id = cs.student_id
 			AND aw.coach_id = ?
@@ -1040,17 +1041,18 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 		var awDur sql.NullInt64
 		var awResultTimeSec, awResultHR, awResultFeeling sql.NullInt64
 		var awResultDistKm sql.NullFloat64
-		var awCreatedAt sql.NullTime
+		var awDueDate sql.NullString
+		var awCreatedAt sql.NullTime // scanned to satisfy column count; ORDER BY in SQL handles dedup priority
 
 		if err := rows.Scan(
 			&studentID, &studentName, &studentAvatar,
 			&awID, &awTitle, &awType, &awDist, &awDur,
 			&awDesc, &awNotes, &awStatus,
 			&awResultTimeSec, &awResultDistKm, &awResultHR, &awResultFeeling,
-			&awCreatedAt,
+			&awDueDate, &awCreatedAt,
 		); err != nil {
-			logErr("scan daily summary row", err)
-			continue
+			writeError(w, http.StatusInternalServerError, "Failed to scan daily summary")
+			return
 		}
 
 		if seen[studentID] {
@@ -1092,6 +1094,9 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 			if awResultFeeling.Valid {
 				v := int(awResultFeeling.Int64)
 				ws.ResultFeeling = &v
+			}
+			if awDueDate.Valid {
+				ws.DueDate = awDueDate.String
 			}
 			item.Workout = ws
 		}
