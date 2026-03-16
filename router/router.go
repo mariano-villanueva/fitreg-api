@@ -121,6 +121,15 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 	})
 
+	// Coach daily summary route
+	mux.HandleFunc("/api/coach/daily-summary", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			ch.GetDailySummary(w, r)
+		} else {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
 	// Coach template routes
 	mux.HandleFunc("/api/coach/templates", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

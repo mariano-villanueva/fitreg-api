@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
@@ -946,4 +947,165 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Status updated", "status": req.Status})
+}
+
+// GetDailySummary handles GET /api/coach/daily-summary?date=YYYY-MM-DD
+func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
+	// Defensive guard consistent with all other handlers in this file
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// Pattern repeated across coach handlers (tech debt: could be extracted to helper)
+	var isCoach bool
+	if err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to verify coach status")
+		return
+	}
+	if !isCoach {
+		writeError(w, http.StatusForbidden, "User is not a coach")
+		return
+	}
+
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		writeError(w, http.StatusBadRequest, "date parameter is required")
+		return
+	}
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid date format")
+		return
+	}
+
+	type WorkoutSummary struct {
+		ID              int64                   `json:"id"`
+		Title           string                  `json:"title"`
+		Type            string                  `json:"type"`
+		DistanceKm      float64                 `json:"distance_km"`
+		DurationSeconds int                     `json:"duration_seconds"`
+		Description     string                  `json:"description"`
+		Notes           string                  `json:"notes"`
+		Status          string                  `json:"status"`
+		ResultTimeSec   *int                    `json:"result_time_seconds"`
+		ResultDistKm    *float64                `json:"result_distance_km"`
+		ResultHR        *int                    `json:"result_heart_rate"`
+		ResultFeeling   *int                    `json:"result_feeling"`
+		Segments        []models.WorkoutSegment `json:"segments"`
+	}
+
+	type DailySummaryItem struct {
+		StudentID     int64           `json:"student_id"`
+		StudentName   string          `json:"student_name"`
+		StudentAvatar *string         `json:"student_avatar"`
+		Workout       *WorkoutSummary `json:"assigned_workout"`
+	}
+
+	rows, err := h.DB.Query(`
+		SELECT
+			u.id, u.name,
+			CASE WHEN u.custom_avatar IS NOT NULL AND u.custom_avatar != '' THEN u.custom_avatar ELSE u.avatar_url END as avatar,
+			aw.id, aw.title, COALESCE(aw.type, ''), aw.distance_km, aw.duration_seconds,
+			COALESCE(aw.description, ''), COALESCE(aw.notes, ''), aw.status,
+			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
+			aw.created_at
+		FROM coach_students cs
+		JOIN users u ON u.id = cs.student_id
+		LEFT JOIN assigned_workouts aw
+			ON aw.student_id = cs.student_id
+			AND aw.coach_id = ?
+			AND aw.due_date = ?
+		WHERE cs.coach_id = ? AND cs.status = 'active'
+		ORDER BY u.name ASC, aw.created_at DESC
+	`, userID, date, userID) // Note: userID appears twice — coach_id used in both JOIN and WHERE
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to fetch daily summary")
+		return
+	}
+	defer rows.Close()
+
+	// De-duplicate: keep first workout per student (most recent due to ORDER BY created_at DESC)
+	seen := map[int64]bool{}
+	items := []DailySummaryItem{}
+
+	for rows.Next() {
+		var studentID int64
+		var studentName string
+		var studentAvatar sql.NullString
+
+		var awID sql.NullInt64
+		var awTitle, awType, awDesc, awNotes, awStatus sql.NullString
+		var awDist sql.NullFloat64
+		var awDur sql.NullInt64
+		var awResultTimeSec, awResultHR, awResultFeeling sql.NullInt64
+		var awResultDistKm sql.NullFloat64
+		var awCreatedAt sql.NullTime
+
+		if err := rows.Scan(
+			&studentID, &studentName, &studentAvatar,
+			&awID, &awTitle, &awType, &awDist, &awDur,
+			&awDesc, &awNotes, &awStatus,
+			&awResultTimeSec, &awResultDistKm, &awResultHR, &awResultFeeling,
+			&awCreatedAt,
+		); err != nil {
+			logErr("scan daily summary row", err)
+			continue
+		}
+
+		if seen[studentID] {
+			continue
+		}
+		seen[studentID] = true
+
+		item := DailySummaryItem{
+			StudentID:   studentID,
+			StudentName: studentName,
+		}
+		if studentAvatar.Valid && studentAvatar.String != "" {
+			item.StudentAvatar = &studentAvatar.String
+		}
+
+		if awID.Valid {
+			ws := &WorkoutSummary{
+				ID:              awID.Int64,
+				Title:           awTitle.String,
+				Type:            awType.String,
+				DistanceKm:      awDist.Float64,
+				DurationSeconds: int(awDur.Int64),
+				Description:     awDesc.String,
+				Notes:           awNotes.String,
+				Status:          awStatus.String,
+				Segments:        []models.WorkoutSegment{},
+			}
+			if awResultTimeSec.Valid {
+				v := int(awResultTimeSec.Int64)
+				ws.ResultTimeSec = &v
+			}
+			if awResultDistKm.Valid {
+				ws.ResultDistKm = &awResultDistKm.Float64
+			}
+			if awResultHR.Valid {
+				v := int(awResultHR.Int64)
+				ws.ResultHR = &v
+			}
+			if awResultFeeling.Valid {
+				v := int(awResultFeeling.Int64)
+				ws.ResultFeeling = &v
+			}
+			item.Workout = ws
+		}
+
+		items = append(items, item)
+	}
+
+	// Load segments for all workouts — one query per workout (N+1).
+	// Acceptable for this app's scale (coaches typically have <30 students).
+	for i, item := range items {
+		if item.Workout != nil {
+			items[i].Workout.Segments = fetchSegments(h.DB, item.Workout.ID)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, items)
 }
