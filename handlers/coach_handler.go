@@ -1011,7 +1011,7 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
 			aw.created_at
 		FROM coach_students cs
-		JOIN users u ON u.id = cs.student_id
+		LEFT JOIN users u ON u.id = cs.student_id
 		LEFT JOIN assigned_workouts aw
 			ON aw.student_id = cs.student_id
 			AND aw.coach_id = ?
