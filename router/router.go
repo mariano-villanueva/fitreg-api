@@ -5,15 +5,16 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/fitreg/api/config"
 	"github.com/fitreg/api/handlers"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/storage"
 )
 
-func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) http.Handler {
+func New(db *sql.DB, cfg *config.Config, store storage.Storage) http.Handler {
 	mux := http.NewServeMux()
 
-	ah := handlers.NewAuthHandler(db, googleClientID, jwtSecret)
+	ah := handlers.NewAuthHandler(db, cfg)
 	nh := handlers.NewNotificationHandler(db)
 	uh := handlers.NewUserHandler(db, nh)
 	wh := handlers.NewWorkoutHandler(db)
@@ -470,5 +471,5 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	})
 
 	// Apply middleware: CORS -> Auth
-	return middleware.CORS(middleware.Auth(jwtSecret)(mux))
+	return middleware.CORS(middleware.Auth(cfg.JWTSecret)(mux))
 }

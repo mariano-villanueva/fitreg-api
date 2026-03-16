@@ -46,7 +46,7 @@ func main() {
 		log.Printf("Using local storage at %s", cfg.LocalStoragePath)
 	}
 
-	handler := router.New(db, cfg.GoogleClientID, cfg.JWTSecret, store)
+	handler := router.New(db, cfg, store)
 
 	addr := ":" + cfg.ServerPort
 	log.Printf("Server starting on %s", addr)

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/fitreg/api/config"
 	"github.com/fitreg/api/models"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -19,11 +20,11 @@ type AuthHandler struct {
 	JWTSecret      string
 }
 
-func NewAuthHandler(db *sql.DB, googleClientID, jwtSecret string) *AuthHandler {
+func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{
 		DB:             db,
-		GoogleClientID: googleClientID,
-		JWTSecret:      jwtSecret,
+		GoogleClientID: cfg.GoogleClientID,
+		JWTSecret:      cfg.JWTSecret,
 	}
 }
 
