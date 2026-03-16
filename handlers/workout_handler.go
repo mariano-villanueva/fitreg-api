@@ -11,7 +11,6 @@ import (
 	"github.com/fitreg/api/models"
 )
 
-
 type WorkoutHandler struct {
 	DB *sql.DB
 }
