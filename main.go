@@ -7,6 +7,8 @@ import (
 
 	"github.com/fitreg/api/config"
 	"github.com/fitreg/api/database"
+	"github.com/fitreg/api/handlers"
+	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/router"
 	"github.com/fitreg/api/storage"
 )
@@ -46,7 +48,25 @@ func main() {
 		log.Printf("Using local storage at %s", cfg.LocalStoragePath)
 	}
 
-	handler := router.New(db, cfg, store)
+	// Construct handlers
+	ah := handlers.NewAuthHandler(db, cfg)
+	nh := handlers.NewNotificationHandler(db)
+	uh := handlers.NewUserHandler(db, nh)
+	wh := handlers.NewWorkoutHandler(db)
+	ih := handlers.NewInvitationHandler(db, nh)
+	ch := handlers.NewCoachHandler(db, nh)
+	cph := handlers.NewCoachProfileHandler(db)
+	achh := handlers.NewAchievementHandler(db, nh)
+	rth := handlers.NewRatingHandler(db)
+	adm := handlers.NewAdminHandler(db, nh)
+	fh := handlers.NewFileHandler(db, store)
+	th := handlers.NewTemplateHandler(db)
+	amh := handlers.NewAssignmentMessageHandler(db, nh)
+
+	mux := router.New(wh, ch, ah, uh, ih, nh, th, achh, rth, cph, amh, adm, fh, cfg)
+
+	// Apply middleware: CORS -> Auth
+	handler := middleware.CORS(middleware.Auth(cfg.JWTSecret)(mux))
 
 	addr := ":" + cfg.ServerPort
 	log.Printf("Server starting on %s", addr)
