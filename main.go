@@ -4,73 +4,67 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
+
+	"go.uber.org/fx"
 
 	"github.com/fitreg/api/config"
-	"github.com/fitreg/api/database"
 	"github.com/fitreg/api/handlers"
 	"github.com/fitreg/api/middleware"
+	dbprovider "github.com/fitreg/api/providers/db"
+	"github.com/fitreg/api/providers/storage"
 	"github.com/fitreg/api/router"
-	"github.com/fitreg/api/storage"
 )
 
 func main() {
-	cfg := config.Load()
+	fx.New(
+		fx.Provide(
+			config.Load,
+			dbprovider.New,
+			storage.New,
+			// Handlers (no dependencies on other handlers)
+			handlers.NewAuthHandler,
+			handlers.NewWorkoutHandler,
+			handlers.NewCoachProfileHandler,
+			handlers.NewRatingHandler,
+			handlers.NewTemplateHandler,
+			handlers.NewNotificationHandler,
+			// Handlers that depend on NotificationHandler
+			handlers.NewUserHandler,
+			handlers.NewAchievementHandler,
+			handlers.NewAssignmentMessageHandler,
+			handlers.NewInvitationHandler,
+			handlers.NewAdminHandler,
+			handlers.NewCoachHandler,
+			// FileHandler depends on storage.Storage
+			handlers.NewFileHandler,
+			router.New,
+		),
+		fx.Invoke(startServer),
+	).Run()
+}
 
-	db, err := database.Connect(cfg.DSN())
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-	defer db.Close()
-	log.Println("Connected to MySQL database")
-
-	// Initialize storage
-	var store storage.Storage
-	switch cfg.StorageProvider {
-	case "s3":
-		s3Store, err := storage.NewS3Storage(context.Background(), storage.S3Config{
-			Bucket:    cfg.S3Bucket,
-			Region:    cfg.S3Region,
-			AccessKey: cfg.S3AccessKey,
-			SecretKey: cfg.S3SecretKey,
-			Endpoint:  cfg.S3Endpoint,
-		})
-		if err != nil {
-			log.Fatalf("Failed to initialize S3 storage: %v", err)
-		}
-		store = s3Store
-		log.Println("Using S3 storage")
-	default:
-		localStore, err := storage.NewLocalStorage(cfg.LocalStoragePath)
-		if err != nil {
-			log.Fatalf("Failed to initialize local storage: %v", err)
-		}
-		store = localStore
-		log.Printf("Using local storage at %s", cfg.LocalStoragePath)
-	}
-
-	// Construct handlers
-	ah := handlers.NewAuthHandler(db, cfg)
-	nh := handlers.NewNotificationHandler(db)
-	uh := handlers.NewUserHandler(db, nh)
-	wh := handlers.NewWorkoutHandler(db)
-	ih := handlers.NewInvitationHandler(db, nh)
-	ch := handlers.NewCoachHandler(db, nh)
-	cph := handlers.NewCoachProfileHandler(db)
-	achh := handlers.NewAchievementHandler(db, nh)
-	rth := handlers.NewRatingHandler(db)
-	adm := handlers.NewAdminHandler(db, nh)
-	fh := handlers.NewFileHandler(db, store)
-	th := handlers.NewTemplateHandler(db)
-	amh := handlers.NewAssignmentMessageHandler(db, nh)
-
-	mux := router.New(wh, ch, ah, uh, ih, nh, th, achh, rth, cph, amh, adm, fh, cfg)
-
-	// Apply middleware: CORS -> Auth
+func startServer(mux *http.ServeMux, cfg *config.Config, lc fx.Lifecycle) {
 	handler := middleware.CORS(middleware.Auth(cfg.JWTSecret)(mux))
-
-	addr := ":" + cfg.ServerPort
-	log.Printf("Server starting on %s", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	srv := &http.Server{
+		Addr:         ":" + cfg.ServerPort,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			go func() {
+				log.Printf("Server listening on :%s", cfg.ServerPort)
+				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					log.Printf("Server error: %v", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			return srv.Shutdown(ctx)
+		},
+	})
 }
