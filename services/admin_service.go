@@ -1,6 +1,8 @@
 package services
 
 import (
+	"database/sql"
+
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/repository"
 )
@@ -73,6 +75,9 @@ func (s *AdminService) VerifyAchievement(achID, adminID int64) error {
 		return ErrForbidden
 	}
 	coachID, eventName, err := s.repo.VerifyAchievement(achID, adminID)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
@@ -87,6 +92,9 @@ func (s *AdminService) RejectAchievement(achID, adminID int64, reason string) er
 		return ErrForbidden
 	}
 	coachID, eventName, err := s.repo.RejectAchievement(achID, reason)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}

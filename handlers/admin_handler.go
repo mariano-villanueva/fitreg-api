@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -143,7 +142,7 @@ func (h *AdminHandler) VerifyAchievement(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusForbidden, "Admin access required")
 			return
 		}
-		if err == sql.ErrNoRows {
+		if err == services.ErrNotFound {
 			writeError(w, http.StatusNotFound, "Achievement not found or already verified")
 			return
 		}
@@ -177,7 +176,7 @@ func (h *AdminHandler) RejectAchievement(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusForbidden, "Admin access required")
 			return
 		}
-		if err == sql.ErrNoRows {
+		if err == services.ErrNotFound {
 			writeError(w, http.StatusNotFound, "Achievement not found or already processed")
 			return
 		}
