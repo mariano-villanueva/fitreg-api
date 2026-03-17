@@ -146,7 +146,7 @@ func (h *InvitationHandler) RespondInvitation(w http.ResponseWriter, r *http.Req
 		case services.ErrStudentMaxCoaches:
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeError(w, http.StatusInternalServerError, "Failed to respond to invitation")
 		}
 		return
 	}
