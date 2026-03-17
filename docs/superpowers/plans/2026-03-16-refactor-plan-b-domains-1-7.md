@@ -1506,6 +1506,9 @@ func (s *AuthService) GoogleLogin(credential string) (*AuthResponse, error) {
 	return &AuthResponse{Token: token, User: user}, nil
 }
 
+// verifyGoogleToken makes an outbound HTTP call to Google's tokeninfo endpoint.
+// Tech debt: this outbound HTTP call ideally belongs behind a provider interface for testability.
+// Acceptable for this refactor phase; can be extracted in a future improvement.
 func (s *AuthService) verifyGoogleToken(idToken string) (*GoogleTokenInfo, error) {
 	resp, err := http.Get("https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken)
 	if err != nil {
@@ -3453,7 +3456,7 @@ type CoachProfileRepository interface {
 
 // RatingRepository handles all rating-related database operations.
 type RatingRepository interface {
-	IsStudentOf(coachID, studentID int64) bool
+	IsStudentOf(coachID, studentID int64) (bool, error)
 	Upsert(coachID, studentID int64, rating int, comment string) error
 	List(coachID int64) ([]models.CoachRating, error)
 }
@@ -3482,10 +3485,13 @@ func NewRatingRepository(db *sql.DB) RatingRepository {
 	return &ratingRepository{db: db}
 }
 
-func (r *ratingRepository) IsStudentOf(coachID, studentID int64) bool {
+func (r *ratingRepository) IsStudentOf(coachID, studentID int64) (bool, error) {
 	var exists int
 	err := r.db.QueryRow("SELECT 1 FROM coach_students WHERE coach_id = ? AND student_id = ?", coachID, studentID).Scan(&exists)
-	return err == nil
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (r *ratingRepository) Upsert(coachID, studentID int64, rating int, comment string) error {
@@ -3556,8 +3562,12 @@ func NewRatingService(repo repository.RatingRepository) *RatingService {
 
 // Upsert creates or updates a rating. Checks student relationship and validates range.
 func (s *RatingService) Upsert(coachID, studentID int64, req models.UpsertRatingRequest) error {
-	if !s.repo.IsStudentOf(coachID, studentID) {
-		return ErrNotStudent
+	isStudent, err := s.repo.IsStudentOf(coachID, studentID)
+	if err != nil {
+		return err
+	}
+	if !isStudent {
+		return errors.New("not a student of this coach")
 	}
 	if req.Rating < 1 || req.Rating > 10 {
 		return ErrInvalidRating
