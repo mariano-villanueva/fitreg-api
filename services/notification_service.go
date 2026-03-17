@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"strings"
 
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/repository"
@@ -169,7 +168,7 @@ func (s *NotificationService) ClearCancelledInvitation(receiverID, invID int64) 
 func (s *NotificationService) acceptInvitation(invitationID, userID int64) error {
 	_, _, senderID, err := s.invRepo.AcceptTx(invitationID, userID)
 	if err != nil {
-		if strings.Contains(err.Error(), "maximum number of coaches") {
+		if errors.Is(err, repository.ErrMaxCoachesReached) {
 			return ErrStudentMaxCoaches
 		}
 		return err
@@ -185,6 +184,7 @@ func (s *NotificationService) rejectInvitation(invitationID, userID int64) {
 	senderID, err := s.invRepo.Reject(invitationID)
 	if err != nil {
 		log.Printf("ERROR rejecting invitation %d: %v", invitationID, err)
+		return
 	}
 
 	name, _, _ := s.userRepo.GetNameAndAvatar(userID)

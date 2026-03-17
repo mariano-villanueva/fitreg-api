@@ -2,10 +2,14 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/fitreg/api/models"
 )
+
+// ErrMaxCoachesReached is returned when a student already has the maximum number of coaches.
+var ErrMaxCoachesReached = errors.New("student has reached the maximum number of coaches")
 
 type invitationRepository struct {
 	db *sql.DB
@@ -62,7 +66,7 @@ func (r *invitationRepository) AcceptTx(invitationID, userID int64) (coachID, st
 		return 0, 0, 0, err
 	}
 	if activeCount >= models.MaxCoachesPerStudent {
-		return 0, 0, 0, fmt.Errorf("student has reached the maximum number of coaches (%d)", models.MaxCoachesPerStudent)
+		return 0, 0, 0, ErrMaxCoachesReached
 	}
 
 	// Create coach_students record
