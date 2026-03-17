@@ -13,3 +13,11 @@ type WorkoutRepository interface {
 	GetSegments(workoutID int64) ([]models.WorkoutSegment, error)
 	ReplaceSegments(workoutID int64, segs []models.SegmentRequest) error
 }
+
+// FileRepository handles file record database operations.
+type FileRepository interface {
+	Create(uuid string, userID int64, name, contentType string, size int64, storageKey string) (models.File, error)
+	GetByUUID(uuid string) (models.File, error)
+	GetOwnerAndKey(uuid string) (userID int64, storageKey string, err error)
+	Delete(uuid string) error
+}

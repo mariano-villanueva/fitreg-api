@@ -41,7 +41,9 @@ func main() {
 			handlers.NewInvitationHandler,
 			handlers.NewAdminHandler,
 			handlers.NewCoachHandler,
-			// FileHandler depends on storage.Storage
+			// File domain
+			repository.NewFileRepository,
+			services.NewFileService,
 			handlers.NewFileHandler,
 			router.New,
 		),
