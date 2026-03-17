@@ -126,3 +126,16 @@ type AchievementRepository interface {
 	// GetFileUUID resolves an image_file_id to its download UUID.
 	GetFileUUID(fileID int64) (string, error)
 }
+
+// AssignmentMessageRepository handles assignment message and assigned workout detail operations.
+type AssignmentMessageRepository interface {
+	GetParticipants(awID int64) (coachID, studentID int64, status, title string, err error)
+	List(awID int64) ([]models.AssignmentMessage, error)
+	Create(awID, senderID int64, body string) (models.AssignmentMessage, error)
+	MarkRead(awID, userID int64) error
+	GetAssignedWorkoutDetail(awID, userID int64) (models.AssignedWorkout, error)
+	// FetchSegments returns segments for an assigned workout.
+	FetchSegments(awID int64) []models.WorkoutSegment
+	// GetFileUUID resolves a file_id to its download UUID.
+	GetFileUUID(fileID int64) (string, error)
+}
