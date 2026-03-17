@@ -16,7 +16,17 @@ func NewWorkoutService(repo repository.WorkoutRepository) *WorkoutService {
 }
 
 func (s *WorkoutService) List(userID int64) ([]models.Workout, error) {
-	return s.repo.List(userID)
+	workouts, err := s.repo.List(userID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range workouts {
+		segs, err := s.repo.GetSegments(workouts[i].ID)
+		if err == nil {
+			workouts[i].Segments = segs
+		}
+	}
+	return workouts, nil
 }
 
 func (s *WorkoutService) GetByID(id, userID int64) (models.Workout, error) {
@@ -28,9 +38,10 @@ func (s *WorkoutService) GetByID(id, userID int64) (models.Workout, error) {
 		return wo, err
 	}
 	segs, err := s.repo.GetSegments(id)
-	if err == nil {
-		wo.Segments = segs
+	if err != nil {
+		return wo, err
 	}
+	wo.Segments = segs
 	return wo, nil
 }
 
@@ -46,7 +57,10 @@ func (s *WorkoutService) Create(userID int64, req models.CreateWorkoutRequest) (
 	if err != nil {
 		return models.Workout{}, err
 	}
-	segs, _ := s.repo.GetSegments(id)
+	segs, err := s.repo.GetSegments(id)
+	if err != nil {
+		return models.Workout{}, err
+	}
 	wo.Segments = segs
 	return wo, nil
 }
@@ -66,7 +80,10 @@ func (s *WorkoutService) Update(id, userID int64, req models.UpdateWorkoutReques
 	if err != nil {
 		return wo, err
 	}
-	segs, _ := s.repo.GetSegments(id)
+	segs, err := s.repo.GetSegments(id)
+	if err != nil {
+		return models.Workout{}, err
+	}
 	wo.Segments = segs
 	return wo, nil
 }

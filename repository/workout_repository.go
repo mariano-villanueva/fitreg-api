@@ -146,11 +146,17 @@ func (r *workoutRepository) GetSegments(workoutID int64) ([]models.WorkoutSegmen
 }
 
 func (r *workoutRepository) ReplaceSegments(workoutID int64, segs []models.SegmentRequest) error {
-	if _, err := r.db.Exec("DELETE FROM workout_segments WHERE workout_id = ?", workoutID); err != nil {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM workout_segments WHERE workout_id = ?", workoutID); err != nil {
 		return err
 	}
 	for i, seg := range segs {
-		if _, err := r.db.Exec(`
+		if _, err := tx.Exec(`
 			INSERT INTO workout_segments (workout_id, order_index, segment_type, repetitions, value, unit, intensity,
 				work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -159,5 +165,5 @@ func (r *workoutRepository) ReplaceSegments(workoutID int64, segs []models.Segme
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
