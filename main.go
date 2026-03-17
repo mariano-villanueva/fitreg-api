@@ -47,6 +47,7 @@ func main() {
 			repository.NewNotificationRepository,
 			repository.NewInvitationRepository,
 			services.NewNotificationService,
+			services.NewInvitationService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,

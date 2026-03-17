@@ -25,16 +25,6 @@ func (h *NotificationHandler) CreateNotification(userID int64, notifType, title,
 	return h.svc.Create(userID, notifType, title, body, metadata, actions)
 }
 
-// AcceptInvitation is called by InvitationHandler to accept an invitation.
-func (h *NotificationHandler) AcceptInvitation(invitationID, userID int64) error {
-	return h.svc.AcceptInvitation(invitationID, userID)
-}
-
-// RejectInvitation is called by InvitationHandler to reject an invitation.
-func (h *NotificationHandler) RejectInvitation(invitationID, userID int64) {
-	h.svc.RejectInvitation(invitationID, userID)
-}
-
 func (h *NotificationHandler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {

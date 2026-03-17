@@ -93,9 +93,22 @@ type NotificationRepository interface {
 }
 
 // InvitationRepository handles invitation-related database operations.
-// Extended in Task 2 with full CRUD; this defines only what NotificationService needs.
 type InvitationRepository interface {
+	// Used by NotificationService
 	GetStatus(id int64) (status string, err error)
 	AcceptTx(invitationID, userID int64) (coachID, studentID, senderID int64, err error)
 	Reject(invitationID int64) (senderID int64, err error)
+
+	// CRUD used by InvitationService
+	FindReceiverByID(receiverID int64) (isCoach, coachPublic bool, err error)
+	FindReceiverByEmail(email string) (receiverID int64, isCoach, coachPublic bool, err error)
+	IsSenderCoach(senderID int64) (bool, error)
+	CountPending(userID, otherID int64) (int, error)
+	CountActiveRelationship(userID, otherID int64) (int, error)
+	CountStudentActiveCoaches(studentID int64) (int, error)
+	Create(senderID, receiverID int64, invType, message string) (invID int64, err error)
+	GetByID(id int64) (models.Invitation, error)
+	List(userID int64, status, direction string, limit, offset int) ([]models.Invitation, error)
+	Cancel(invID int64) error
+	IsAdmin(userID int64) (bool, error)
 }

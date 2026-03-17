@@ -99,3 +99,140 @@ func (r *invitationRepository) Reject(invitationID int64) (senderID int64, err e
 	err = r.db.QueryRow("SELECT sender_id FROM invitations WHERE id = ?", invitationID).Scan(&senderID)
 	return senderID, err
 }
+
+func (r *invitationRepository) FindReceiverByID(receiverID int64) (bool, bool, error) {
+	var isCoach, coachPublic bool
+	err := r.db.QueryRow(
+		"SELECT COALESCE(is_coach, FALSE), COALESCE(coach_public, FALSE) FROM users WHERE id = ?",
+		receiverID,
+	).Scan(&isCoach, &coachPublic)
+	return isCoach, coachPublic, err
+}
+
+func (r *invitationRepository) FindReceiverByEmail(email string) (int64, bool, bool, error) {
+	var receiverID int64
+	var isCoach, coachPublic bool
+	err := r.db.QueryRow(
+		"SELECT id, COALESCE(is_coach, FALSE), COALESCE(coach_public, FALSE) FROM users WHERE email = ?",
+		email,
+	).Scan(&receiverID, &isCoach, &coachPublic)
+	return receiverID, isCoach, coachPublic, err
+}
+
+func (r *invitationRepository) IsSenderCoach(senderID int64) (bool, error) {
+	var isCoach bool
+	err := r.db.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", senderID).Scan(&isCoach)
+	return isCoach, err
+}
+
+func (r *invitationRepository) CountPending(userID, otherID int64) (int, error) {
+	var count int
+	err := r.db.QueryRow(`
+        SELECT COUNT(*) FROM invitations WHERE status = 'pending' AND (
+            (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+        )
+    `, userID, otherID, otherID, userID).Scan(&count)
+	return count, err
+}
+
+func (r *invitationRepository) CountActiveRelationship(userID, otherID int64) (int, error) {
+	var count int
+	err := r.db.QueryRow(`
+        SELECT COUNT(*) FROM coach_students WHERE status = 'active' AND (
+            (coach_id = ? AND student_id = ?) OR (coach_id = ? AND student_id = ?)
+        )
+    `, userID, otherID, otherID, userID).Scan(&count)
+	return count, err
+}
+
+func (r *invitationRepository) CountStudentActiveCoaches(studentID int64) (int, error) {
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM coach_students WHERE student_id = ? AND status = 'active'",
+		studentID,
+	).Scan(&count)
+	return count, err
+}
+
+func (r *invitationRepository) Create(senderID, receiverID int64, invType, message string) (int64, error) {
+	result, err := r.db.Exec(
+		"INSERT INTO invitations (type, sender_id, receiver_id, message, status) VALUES (?, ?, ?, ?, 'pending')",
+		invType, senderID, receiverID, message,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (r *invitationRepository) GetByID(id int64) (models.Invitation, error) {
+	var inv models.Invitation
+	err := r.db.QueryRow(`
+        SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
+            COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
+        FROM invitations i
+        JOIN users s ON s.id = i.sender_id
+        JOIN users rv ON rv.id = i.receiver_id
+        WHERE i.id = ?
+    `, id).Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
+		&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar)
+	return inv, err
+}
+
+func (r *invitationRepository) List(userID int64, status, direction string, limit, offset int) ([]models.Invitation, error) {
+	query := `
+        SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
+            COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
+        FROM invitations i
+        JOIN users s ON s.id = i.sender_id
+        JOIN users rv ON rv.id = i.receiver_id
+        WHERE 1=1
+    `
+	args := []interface{}{}
+
+	switch direction {
+	case "sent":
+		query += " AND i.sender_id = ?"
+		args = append(args, userID)
+	case "received":
+		query += " AND i.receiver_id = ?"
+		args = append(args, userID)
+	default:
+		query += " AND (i.sender_id = ? OR i.receiver_id = ?)"
+		args = append(args, userID, userID)
+	}
+	if status != "" {
+		query += " AND i.status = ?"
+		args = append(args, status)
+	}
+	query += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	invitations := []models.Invitation{}
+	for rows.Next() {
+		var inv models.Invitation
+		if err := rows.Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
+			&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar); err != nil {
+			continue
+		}
+		invitations = append(invitations, inv)
+	}
+	return invitations, nil
+}
+
+func (r *invitationRepository) Cancel(invID int64) error {
+	_, err := r.db.Exec("UPDATE invitations SET status = 'cancelled', updated_at = NOW() WHERE id = ?", invID)
+	return err
+}
+
+func (r *invitationRepository) IsAdmin(userID int64) (bool, error) {
+	var isAdmin bool
+	err := r.db.QueryRow("SELECT COALESCE(is_admin, FALSE) FROM users WHERE id = ?", userID).Scan(&isAdmin)
+	return isAdmin, err
+}
