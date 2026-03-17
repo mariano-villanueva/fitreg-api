@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+	"log"
 
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/repository"
@@ -22,7 +23,10 @@ func (s *WorkoutService) List(userID int64) ([]models.Workout, error) {
 	}
 	for i := range workouts {
 		segs, err := s.repo.GetSegments(workouts[i].ID)
-		if err == nil {
+		if err != nil {
+			log.Printf("ERROR fetching segments for workout %d: %v", workouts[i].ID, err)
+			workouts[i].Segments = []models.WorkoutSegment{}
+		} else {
 			workouts[i].Segments = segs
 		}
 	}
