@@ -144,7 +144,7 @@ func (h *InvitationHandler) RespondInvitation(w http.ResponseWriter, r *http.Req
 		case services.ErrInvitationNotPending:
 			writeError(w, http.StatusConflict, err.Error())
 		case services.ErrStudentMaxCoaches:
-			writeError(w, http.StatusConflict, err.Error())
+			writeError(w, http.StatusBadRequest, err.Error())
 		default:
 			writeError(w, http.StatusBadRequest, err.Error())
 		}
