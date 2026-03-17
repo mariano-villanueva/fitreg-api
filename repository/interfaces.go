@@ -127,6 +127,29 @@ type AchievementRepository interface {
 	GetFileUUID(fileID int64) (string, error)
 }
 
+// CoachRepository handles coach-student relationships and assigned workouts.
+type CoachRepository interface {
+	IsCoach(userID int64) (bool, error)
+	IsAdmin(userID int64) (bool, error)
+	IsStudentOf(coachID, studentID int64) (bool, error)
+	GetStudents(coachID int64) ([]models.CoachStudentInfo, error)
+	GetRelationship(csID int64) (coachID, studentID int64, status string, err error)
+	EndRelationship(csID int64) error
+	GetStudentWorkouts(studentID int64) ([]models.Workout, error)
+	ListAssignedWorkouts(coachID int64, studentID int64, statusFilter, startDate, endDate string, limit, offset int) ([]models.AssignedWorkout, int, error)
+	CreateAssignedWorkout(coachID int64, req models.CreateAssignedWorkoutRequest) (models.AssignedWorkout, error)
+	GetAssignedWorkout(awID, coachID int64) (models.AssignedWorkout, error)
+	UpdateAssignedWorkout(awID, coachID int64, req models.UpdateAssignedWorkoutRequest) (models.AssignedWorkout, error)
+	GetAssignedWorkoutStatus(awID, coachID int64) (string, error)
+	DeleteAssignedWorkout(awID, coachID int64) error
+	GetMyAssignedWorkouts(studentID int64, startDate, endDate string) ([]models.AssignedWorkout, error)
+	UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) (coachID int64, workoutTitle string, err error)
+	GetDailySummary(coachID int64, date string) ([]models.DailySummaryItem, error)
+	GetUserName(id int64) (string, error)
+	FetchSegments(awID int64) []models.WorkoutSegment
+	GetFileUUID(fileID int64) (string, error)
+}
+
 // AssignmentMessageRepository handles assignment message and assigned workout detail operations.
 type AssignmentMessageRepository interface {
 	GetParticipants(awID int64) (coachID, studentID int64, status, title string, err error)

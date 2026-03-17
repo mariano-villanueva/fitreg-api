@@ -197,3 +197,34 @@ type SegmentRequest struct {
 	RestUnit      string  `json:"rest_unit"`
 	RestIntensity string  `json:"rest_intensity"`
 }
+
+type CoachStudentInfo struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	AvatarURL string `json:"avatar_url"`
+}
+
+type DailySummaryWorkout struct {
+	ID              int64            `json:"id"`
+	Title           string           `json:"title"`
+	Type            string           `json:"type"`
+	DistanceKm      float64          `json:"distance_km"`
+	DurationSeconds int              `json:"duration_seconds"`
+	Description     string           `json:"description"`
+	Notes           string           `json:"notes"`
+	Status          string           `json:"status"`
+	ResultTimeSec   *int             `json:"result_time_seconds"`
+	ResultDistKm    *float64         `json:"result_distance_km"`
+	ResultHR        *int             `json:"result_heart_rate"`
+	ResultFeeling   *int             `json:"result_feeling"`
+	DueDate         string           `json:"due_date"`
+	Segments        []WorkoutSegment `json:"segments"`
+}
+
+type DailySummaryItem struct {
+	StudentID     int64                `json:"student_id"`
+	StudentName   string               `json:"student_name"`
+	StudentAvatar *string              `json:"student_avatar"`
+	Workout       *DailySummaryWorkout `json:"assigned_workout"`
+}

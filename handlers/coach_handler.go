@@ -1,9 +1,8 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
-	"log"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,45 +10,15 @@ import (
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
+	"github.com/fitreg/api/services"
 )
 
 type CoachHandler struct {
-	DB           *sql.DB
-	Notification *NotificationHandler
+	svc *services.CoachService
 }
 
-func NewCoachHandler(db *sql.DB, nh *NotificationHandler) *CoachHandler {
-	return &CoachHandler{DB: db, Notification: nh}
-}
-
-func fetchSegments(db *sql.DB, assignedWorkoutID int64) []models.WorkoutSegment {
-	rows, err := db.Query(`
-		SELECT id, assigned_workout_id, order_index, segment_type, repetitions,
-			value, unit, intensity, work_value, work_unit, work_intensity,
-			rest_value, rest_unit, rest_intensity
-		FROM assigned_workout_segments
-		WHERE assigned_workout_id = ?
-		ORDER BY order_index ASC
-	`, assignedWorkoutID)
-	if err != nil {
-		logErr("fetch segments query", err)
-		return []models.WorkoutSegment{}
-	}
-	defer rows.Close()
-
-	segments := []models.WorkoutSegment{}
-	for rows.Next() {
-		var s models.WorkoutSegment
-		if err := rows.Scan(&s.ID, &s.AssignedWorkoutID, &s.OrderIndex, &s.SegmentType,
-			&s.Repetitions, &s.Value, &s.Unit, &s.Intensity,
-			&s.WorkValue, &s.WorkUnit, &s.WorkIntensity,
-			&s.RestValue, &s.RestUnit, &s.RestIntensity); err != nil {
-			logErr("scan segment row", err)
-			continue
-		}
-		segments = append(segments, s)
-	}
-	return segments
+func NewCoachHandler(svc *services.CoachService) *CoachHandler {
+	return &CoachHandler{svc: svc}
 }
 
 // ListStudents handles GET /api/coach/students
@@ -60,45 +29,14 @@ func (h *CoachHandler) ListStudents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify user is a coach
-	var isCoach bool
-	err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach)
+	students, err := h.svc.ListStudents(userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to verify coach status")
-		return
-	}
-	if !isCoach {
-		writeError(w, http.StatusForbidden, "User is not a coach")
-		return
-	}
-
-	rows, err := h.DB.Query(`
-		SELECT u.id, u.name, u.email, COALESCE(u.custom_avatar, '') as avatar_url
-		FROM users u
-		JOIN coach_students cs ON u.id = cs.student_id
-		WHERE cs.coach_id = ? AND cs.status = 'active'
-	`, userID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch students")
-		return
-	}
-	defer rows.Close()
-
-	type StudentInfo struct {
-		ID        int64  `json:"id"`
-		Name      string `json:"name"`
-		Email     string `json:"email"`
-		AvatarURL string `json:"avatar_url"`
-	}
-
-	students := []StudentInfo{}
-	for rows.Next() {
-		var s StudentInfo
-		if err := rows.Scan(&s.ID, &s.Name, &s.Email, &s.AvatarURL); err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to scan student")
+		if errors.Is(err, services.ErrNotCoach) {
+			writeError(w, http.StatusForbidden, "User is not a coach")
 			return
 		}
-		students = append(students, s)
+		writeError(w, http.StatusInternalServerError, "Failed to fetch students")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, students)
@@ -124,50 +62,19 @@ func (h *CoachHandler) EndRelationship(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var coachID, studentID int64
-	var status string
-	err = h.DB.QueryRow("SELECT coach_id, student_id, status FROM coach_students WHERE id = ?", csID).Scan(&coachID, &studentID, &status)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Relationship not found")
+	if err := h.svc.EndRelationship(csID, userID); err != nil {
+		switch {
+		case errors.Is(err, services.ErrNotFound):
+			writeError(w, http.StatusNotFound, "Relationship not found")
+		case errors.Is(err, services.ErrForbidden):
+			writeError(w, http.StatusForbidden, "Access denied")
+		case err.Error() == "relationship is not active":
+			writeError(w, http.StatusConflict, "Relationship is not active")
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to end relationship")
+		}
 		return
 	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch relationship")
-		return
-	}
-
-	var isAdmin bool
-	if err := h.DB.QueryRow("SELECT COALESCE(is_admin, FALSE) FROM users WHERE id = ?", userID).Scan(&isAdmin); err != nil {
-		logErr("check is admin for end relationship", err)
-	}
-
-	if coachID != userID && studentID != userID && !isAdmin {
-		writeError(w, http.StatusForbidden, "Access denied")
-		return
-	}
-	if status != "active" {
-		writeError(w, http.StatusConflict, "Relationship is not active")
-		return
-	}
-
-	_, err = h.DB.Exec("UPDATE coach_students SET status = 'finished', finished_at = NOW() WHERE id = ?", csID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to end relationship")
-		return
-	}
-
-	var otherID int64
-	if userID == coachID {
-		otherID = studentID
-	} else {
-		otherID = coachID
-	}
-	var userName string
-	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&userName); err != nil {
-		logErr("fetch user name for end relationship", err)
-	}
-	meta := map[string]interface{}{"user_id": userID, "user_name": userName}
-	h.Notification.CreateNotification(otherID, "relationship_ended", "notif_relationship_ended_title", "notif_relationship_ended_body", meta, nil)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Relationship ended"})
 }
@@ -180,7 +87,6 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Extract student ID from path (before /workouts)
 	path := strings.TrimSuffix(r.URL.Path, "/workouts")
 	studentID, err := extractID(path, "/api/coach/students/")
 	if err != nil {
@@ -188,45 +94,14 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Verify student belongs to this coach
-	var exists int
-	err = h.DB.QueryRow("SELECT 1 FROM coach_students WHERE coach_id = ? AND student_id = ? AND status = 'active'", userID, studentID).Scan(&exists)
+	workouts, err := h.svc.GetStudentWorkouts(userID, studentID)
 	if err != nil {
-		writeError(w, http.StatusForbidden, "Student does not belong to this coach")
-		return
-	}
-
-	rows, err := h.DB.Query(`
-		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
-		FROM workouts
-		WHERE user_id = ?
-		ORDER BY date DESC
-	`, studentID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch workouts")
-		return
-	}
-	defer rows.Close()
-
-	workouts := []models.Workout{}
-	for rows.Next() {
-		var wo models.Workout
-		var avgPace, workoutType, notes sql.NullString
-		if err := rows.Scan(&wo.ID, &wo.UserID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
-			&avgPace, &wo.Calories, &wo.AvgHeartRate, &wo.Feeling, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to scan workout")
+		if errors.Is(err, services.ErrForbidden) {
+			writeError(w, http.StatusForbidden, "Student does not belong to this coach")
 			return
 		}
-		if avgPace.Valid {
-			wo.AvgPace = avgPace.String
-		}
-		if workoutType.Valid {
-			wo.Type = workoutType.String
-		}
-		if notes.Valid {
-			wo.Notes = notes.String
-		}
-		workouts = append(workouts, wo)
+		writeError(w, http.StatusInternalServerError, "Failed to fetch workouts")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, workouts)
@@ -240,45 +115,17 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	query := `
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as student_name,
-			(SELECT COUNT(*) FROM assignment_messages am WHERE am.assigned_workout_id = aw.id AND am.sender_id != ? AND am.is_read = FALSE)
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.student_id
-		WHERE aw.coach_id = ?
-	`
-	args := []interface{}{userID, userID}
-
-	studentIDStr := r.URL.Query().Get("student_id")
-	if studentIDStr != "" {
-		sid, err := strconv.ParseInt(studentIDStr, 10, 64)
-		if err == nil {
-			query += " AND aw.student_id = ?"
-			args = append(args, sid)
+	var studentID int64
+	if studentIDStr := r.URL.Query().Get("student_id"); studentIDStr != "" {
+		if sid, err := strconv.ParseInt(studentIDStr, 10, 64); err == nil {
+			studentID = sid
 		}
 	}
 
 	statusFilter := r.URL.Query().Get("status")
-	if statusFilter == "pending" {
-		query += " AND aw.status = 'pending'"
-	} else if statusFilter == "finished" {
-		query += " AND aw.status IN ('completed', 'skipped')"
-	}
-
 	startDate := r.URL.Query().Get("start_date")
 	endDate := r.URL.Query().Get("end_date")
-	if startDate != "" && endDate != "" {
-		query += " AND aw.due_date >= ? AND aw.due_date <= ?"
-		args = append(args, startDate, endDate)
-	}
 
-	query += " ORDER BY aw.due_date DESC"
-
-	// Pagination
 	limit := 0
 	offset := 0
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
@@ -292,71 +139,10 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Count total before pagination
-	var total int
-	countQuery := "SELECT COUNT(*) FROM assigned_workouts aw WHERE aw.coach_id = ?"
-	countArgs := []interface{}{userID}
-	if studentIDStr != "" {
-		if sid, err := strconv.ParseInt(studentIDStr, 10, 64); err == nil {
-			countQuery += " AND aw.student_id = ?"
-			countArgs = append(countArgs, sid)
-		}
-	}
-	if statusFilter == "pending" {
-		countQuery += " AND aw.status = 'pending'"
-	} else if statusFilter == "finished" {
-		countQuery += " AND aw.status IN ('completed', 'skipped')"
-	}
-	if startDate != "" && endDate != "" {
-		countQuery += " AND aw.due_date >= ? AND aw.due_date <= ?"
-		countArgs = append(countArgs, startDate, endDate)
-	}
-	if err := h.DB.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
-		logErr("count assigned workouts", err)
-	}
-
-	if limit > 0 {
-		query += " LIMIT ? OFFSET ?"
-		args = append(args, limit, offset)
-	}
-
-	rows, err := h.DB.Query(query, args...)
+	workouts, total, err := h.svc.ListAssignedWorkouts(userID, studentID, statusFilter, startDate, endDate, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workouts")
 		return
-	}
-	defer rows.Close()
-
-	workouts := []models.AssignedWorkout{}
-	for rows.Next() {
-		var aw models.AssignedWorkout
-		var description, notes, dueDate, expectedFields sql.NullString
-		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
-			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.ImageFileID, &aw.Status, &dueDate,
-			&aw.CreatedAt, &aw.UpdatedAt, &aw.StudentName, &aw.UnreadMessageCount); err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to scan assigned workout")
-			return
-		}
-		if description.Valid {
-			aw.Description = description.String
-		}
-		if notes.Valid {
-			aw.Notes = notes.String
-		}
-		if dueDate.Valid {
-			aw.DueDate = truncateDate(dueDate.String)
-		}
-		if expectedFields.Valid {
-			aw.ExpectedFields = json.RawMessage(expectedFields.String)
-		}
-		workouts = append(workouts, aw)
-	}
-
-	for i := range workouts {
-		workouts[i].Segments = fetchSegments(h.DB, workouts[i].ID)
-		h.populateImageURL(&workouts[i])
 	}
 
 	if limit > 0 {
@@ -377,14 +163,6 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Verify user is a coach
-	var isCoach bool
-	err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach)
-	if err != nil || !isCoach {
-		writeError(w, http.StatusForbidden, "User is not a coach")
-		return
-	}
-
 	var req models.CreateAssignedWorkoutRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
@@ -401,111 +179,18 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Verify student belongs to coach
-	var exists int
-	err = h.DB.QueryRow("SELECT 1 FROM coach_students WHERE coach_id = ? AND student_id = ? AND status = 'active'", userID, req.StudentID).Scan(&exists)
+	aw, err := h.svc.CreateAssignedWorkout(userID, req)
 	if err != nil {
-		writeError(w, http.StatusForbidden, "Student does not belong to this coach")
-		return
-	}
-
-	var dueDateVal interface{}
-	if req.DueDate != "" {
-		dueDateVal = req.DueDate
-	} else {
-		dueDateVal = nil
-	}
-
-	if len(req.ExpectedFields) == 0 {
-		req.ExpectedFields = []string{"feeling"}
-	}
-	expectedFieldsJSON, err := json.Marshal(req.ExpectedFields)
-	if err != nil {
-		logErr("marshal expected fields", err)
-	}
-
-	log.Printf("Creating assigned workout: coach=%d student=%d title=%s type=%s due=%v", userID, req.StudentID, req.Title, req.Type, dueDateVal)
-	result, err := h.DB.Exec(`
-		INSERT INTO assigned_workouts (coach_id, student_id, title, description, type, distance_km, duration_seconds, notes, expected_fields, due_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, userID, req.StudentID, req.Title, req.Description, req.Type, req.DistanceKm, req.DurationSeconds, req.Notes, expectedFieldsJSON, dueDateVal)
-	if err != nil {
-		log.Printf("ERROR creating assigned workout: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to create assigned workout")
-		return
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		logErr("get last insert id for assigned workout", err)
-	}
-
-	// Insert segments
-	for i, seg := range req.Segments {
-		log.Printf("Inserting segment %d: type=%s unit=%s intensity=%s work_unit=%s work_intensity=%s rest_unit=%s rest_intensity=%s",
-			i, seg.SegmentType, seg.Unit, seg.Intensity, seg.WorkUnit, seg.WorkIntensity, seg.RestUnit, seg.RestIntensity)
-		_, err := h.DB.Exec(`
-			INSERT INTO assigned_workout_segments
-				(assigned_workout_id, order_index, segment_type, repetitions, value, unit, intensity,
-				 work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, id, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
-			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity)
-		if err != nil {
-			log.Printf("ERROR inserting segment %d: %v", i, err)
-			writeError(w, http.StatusInternalServerError, "Failed to create workout segment")
-			return
+		switch {
+		case errors.Is(err, services.ErrNotCoach):
+			writeError(w, http.StatusForbidden, "User is not a coach")
+		case errors.Is(err, services.ErrForbidden):
+			writeError(w, http.StatusForbidden, "Student does not belong to this coach")
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to create assigned workout")
 		}
-	}
-
-	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields sql.NullString
-	var studentName string
-	err = h.DB.QueryRow(`
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as student_name
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.student_id
-		WHERE aw.id = ?
-	`, id).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
-			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.ImageFileID, &aw.Status, &dueDate,
-		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch created workout")
 		return
 	}
-	if description.Valid {
-		aw.Description = description.String
-	}
-	if notes.Valid {
-		aw.Notes = notes.String
-	}
-	if dueDate.Valid {
-		aw.DueDate = truncateDate(dueDate.String)
-	}
-	if expectedFields.Valid {
-		aw.ExpectedFields = json.RawMessage(expectedFields.String)
-	}
-	aw.StudentName = studentName
-	aw.Segments = fetchSegments(h.DB, aw.ID)
-	h.populateImageURL(&aw)
-
-	// Emit notification for student
-	var coachName string
-	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&coachName); err != nil {
-		logErr("fetch coach name for workout notification", err)
-	}
-	notifMeta := map[string]interface{}{
-		"workout_id":    aw.ID,
-		"workout_title": req.Title,
-		"coach_name":    coachName,
-	}
-	h.Notification.CreateNotification(req.StudentID, "workout_assigned", "notif_workout_assigned_title", "notif_workout_assigned_body", notifMeta, nil)
 
 	writeJSON(w, http.StatusCreated, aw)
 }
@@ -524,46 +209,15 @@ func (h *CoachHandler) GetAssignedWorkout(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields sql.NullString
-	var studentName string
-	err = h.DB.QueryRow(`
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as student_name
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.student_id
-		WHERE aw.id = ? AND aw.coach_id = ?
-	`, awID, userID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
-			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.ImageFileID, &aw.Status, &dueDate,
-		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Assigned workout not found")
-		return
-	}
+	aw, err := h.svc.GetAssignedWorkout(awID, userID)
 	if err != nil {
+		if errors.Is(err, services.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "Assigned workout not found")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workout")
 		return
 	}
-	if description.Valid {
-		aw.Description = description.String
-	}
-	if notes.Valid {
-		aw.Notes = notes.String
-	}
-	if dueDate.Valid {
-		aw.DueDate = truncateDate(dueDate.String)
-	}
-	if expectedFields.Valid {
-		aw.ExpectedFields = json.RawMessage(expectedFields.String)
-	}
-	aw.StudentName = studentName
-	aw.Segments = fetchSegments(h.DB, aw.ID)
-	h.populateImageURL(&aw)
 
 	writeJSON(w, http.StatusOK, aw)
 }
@@ -582,22 +236,6 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Check workout exists, belongs to coach, and is not completed
-	var status string
-	err = h.DB.QueryRow("SELECT status FROM assigned_workouts WHERE id = ? AND coach_id = ?", awID, userID).Scan(&status)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Assigned workout not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch workout")
-		return
-	}
-	if status != "pending" {
-		writeError(w, http.StatusBadRequest, "Cannot edit a finished workout")
-		return
-	}
-
 	var req models.UpdateAssignedWorkoutRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
@@ -609,84 +247,18 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var dueDateVal interface{}
-	if req.DueDate != "" {
-		dueDateVal = req.DueDate
-	} else {
-		dueDateVal = nil
-	}
-
-	if len(req.ExpectedFields) == 0 {
-		req.ExpectedFields = []string{"feeling"}
-	}
-	efJSON, err := json.Marshal(req.ExpectedFields)
+	aw, err := h.svc.UpdateAssignedWorkout(awID, userID, req)
 	if err != nil {
-		logErr("marshal expected fields for update", err)
-	}
-
-	_, err = h.DB.Exec(`
-		UPDATE assigned_workouts
-		SET title = ?, description = ?, type = ?, distance_km = ?, duration_seconds = ?, notes = ?, expected_fields = ?, due_date = ?, updated_at = NOW()
-		WHERE id = ? AND coach_id = ?
-	`, req.Title, req.Description, req.Type, req.DistanceKm, req.DurationSeconds, req.Notes, efJSON, dueDateVal, awID, userID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to update assigned workout")
-		return
-	}
-
-	// Replace segments: delete old, insert new
-	if _, err := h.DB.Exec("DELETE FROM assigned_workout_segments WHERE assigned_workout_id = ?", awID); err != nil {
-		logErr("delete old segments", err)
-	}
-	for i, seg := range req.Segments {
-		if _, err := h.DB.Exec(`
-			INSERT INTO assigned_workout_segments
-				(assigned_workout_id, order_index, segment_type, repetitions, value, unit, intensity,
-				 work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, awID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
-			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity); err != nil {
-			logErr("insert updated segment", err)
+		switch {
+		case errors.Is(err, services.ErrNotFound):
+			writeError(w, http.StatusNotFound, "Assigned workout not found")
+		case errors.Is(err, services.ErrWorkoutFinished):
+			writeError(w, http.StatusBadRequest, "Cannot edit a finished workout")
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to update assigned workout")
 		}
-	}
-
-	// Return updated workout
-	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields sql.NullString
-	var studentName string
-	err = h.DB.QueryRow(`
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as student_name
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.student_id
-		WHERE aw.id = ?
-	`, awID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
-			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.ImageFileID, &aw.Status, &dueDate,
-		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch updated workout")
 		return
 	}
-	if description.Valid {
-		aw.Description = description.String
-	}
-	if notes.Valid {
-		aw.Notes = notes.String
-	}
-	if dueDate.Valid {
-		aw.DueDate = truncateDate(dueDate.String)
-	}
-	if expectedFields.Valid {
-		aw.ExpectedFields = json.RawMessage(expectedFields.String)
-	}
-	aw.StudentName = studentName
-	aw.Segments = fetchSegments(h.DB, aw.ID)
-	h.populateImageURL(&aw)
 
 	writeJSON(w, http.StatusOK, aw)
 }
@@ -705,32 +277,15 @@ func (h *CoachHandler) DeleteAssignedWorkout(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Check workout is still pending
-	var status string
-	if err := h.DB.QueryRow("SELECT status FROM assigned_workouts WHERE id = ? AND coach_id = ?", awID, userID).Scan(&status); err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Assigned workout not found")
-		return
-	} else if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch workout")
-		return
-	}
-	if status != "pending" {
-		writeError(w, http.StatusBadRequest, "Cannot delete a finished workout")
-		return
-	}
-
-	result, err := h.DB.Exec("DELETE FROM assigned_workouts WHERE id = ? AND coach_id = ?", awID, userID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to delete assigned workout")
-		return
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		logErr("get rows affected for delete assigned workout", err)
-	}
-	if rowsAffected == 0 {
-		writeError(w, http.StatusNotFound, "Assigned workout not found")
+	if err := h.svc.DeleteAssignedWorkout(awID, userID); err != nil {
+		switch {
+		case errors.Is(err, services.ErrNotFound):
+			writeError(w, http.StatusNotFound, "Assigned workout not found")
+		case errors.Is(err, services.ErrWorkoutFinished):
+			writeError(w, http.StatusBadRequest, "Cannot delete a finished workout")
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to delete assigned workout")
+		}
 		return
 	}
 
@@ -745,79 +300,16 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	query := `
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as coach_name,
-			(SELECT COUNT(*) FROM assignment_messages am WHERE am.assigned_workout_id = aw.id AND am.sender_id != ? AND am.is_read = FALSE)
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.coach_id
-		WHERE aw.student_id = ?
-	`
-	args := []interface{}{userID, userID}
-
 	startDate := r.URL.Query().Get("start_date")
 	endDate := r.URL.Query().Get("end_date")
-	if startDate != "" && endDate != "" {
-		query += " AND aw.due_date >= ? AND aw.due_date <= ?"
-		args = append(args, startDate, endDate)
-	}
 
-	query += " ORDER BY aw.due_date ASC"
-
-	rows, err := h.DB.Query(query, args...)
+	workouts, err := h.svc.GetMyAssignedWorkouts(userID, startDate, endDate)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workouts")
 		return
 	}
-	defer rows.Close()
-
-	workouts := []models.AssignedWorkout{}
-	for rows.Next() {
-		var aw models.AssignedWorkout
-		var description, notes, dueDate, expectedFields sql.NullString
-		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
-			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.ImageFileID, &aw.Status, &dueDate,
-			&aw.CreatedAt, &aw.UpdatedAt, &aw.CoachName, &aw.UnreadMessageCount); err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to scan assigned workout")
-			return
-		}
-		if description.Valid {
-			aw.Description = description.String
-		}
-		if notes.Valid {
-			aw.Notes = notes.String
-		}
-		if dueDate.Valid {
-			aw.DueDate = truncateDate(dueDate.String)
-		}
-		if expectedFields.Valid {
-			aw.ExpectedFields = json.RawMessage(expectedFields.String)
-		}
-		workouts = append(workouts, aw)
-	}
-
-	for i := range workouts {
-		workouts[i].Segments = fetchSegments(h.DB, workouts[i].ID)
-		h.populateImageURL(&workouts[i])
-	}
 
 	writeJSON(w, http.StatusOK, workouts)
-}
-
-func (h *CoachHandler) populateImageURL(aw *models.AssignedWorkout) {
-	if aw.ImageFileID == nil {
-		return
-	}
-	var uuid string
-	if err := h.DB.QueryRow("SELECT uuid FROM files WHERE id = ?", *aw.ImageFileID).Scan(&uuid); err != nil {
-		return
-	}
-	aw.ImageURL = "/api/files/" + uuid + "/download"
 }
 
 // UpdateAssignedWorkoutStatus handles PUT /api/my-assigned-workouts/{id}/status
@@ -828,7 +320,6 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Extract ID from path: /api/my-assigned-workouts/{id}/status
 	path := strings.TrimSuffix(r.URL.Path, "/status")
 	awID, err := extractID(path, "/api/my-assigned-workouts/")
 	if err != nil {
@@ -852,98 +343,13 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 		return
 	}
 
-	result, err := h.DB.Exec(`
-		UPDATE assigned_workouts SET status = ?,
-			result_time_seconds = ?, result_distance_km = ?, result_heart_rate = ?, result_feeling = ?,
-			image_file_id = ?, updated_at = NOW() WHERE id = ? AND student_id = ?
-	`, req.Status, req.ResultTimeSeconds, req.ResultDistanceKm, req.ResultHeartRate, req.ResultFeeling, req.ImageFileID, awID, userID)
-	if err != nil {
+	if err := h.svc.UpdateAssignedWorkoutStatus(awID, userID, req); err != nil {
+		if errors.Is(err, services.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "Assigned workout not found")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to update status")
 		return
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		logErr("get rows affected for update status", err)
-	}
-	if rowsAffected == 0 {
-		writeError(w, http.StatusNotFound, "Assigned workout not found")
-		return
-	}
-
-	// If completed, create a workout record for the athlete
-	if req.Status == "completed" {
-		var aw struct {
-			Type            string
-			DistanceKm      float64
-			DurationSeconds int
-			Notes           sql.NullString
-			DueDate         sql.NullString
-		}
-		if err := h.DB.QueryRow(`SELECT COALESCE(type,'easy'), COALESCE(distance_km,0), COALESCE(duration_seconds,0), notes, due_date
-			FROM assigned_workouts WHERE id = ?`, awID).Scan(&aw.Type, &aw.DistanceKm, &aw.DurationSeconds, &aw.Notes, &aw.DueDate); err != nil {
-			logErr("fetch assigned workout for completion", err)
-		}
-
-		// Use result values if provided, fall back to assigned values
-		finalDistance := aw.DistanceKm
-		if req.ResultDistanceKm != nil {
-			finalDistance = *req.ResultDistanceKm
-		}
-		finalDuration := aw.DurationSeconds
-		if req.ResultTimeSeconds != nil {
-			finalDuration = *req.ResultTimeSeconds
-		}
-		var avgHR int
-		if req.ResultHeartRate != nil {
-			avgHR = *req.ResultHeartRate
-		}
-
-		workoutDate := "CURDATE()"
-		dateArg := interface{}(nil)
-		if aw.DueDate.Valid {
-			workoutDate = "?"
-			dateArg = truncateDate(aw.DueDate.String)
-		}
-
-		var notes interface{}
-		if aw.Notes.Valid {
-			notes = aw.Notes.String
-		}
-
-		if _, err := h.DB.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
-			VALUES (?, `+workoutDate+`, ?, ?, ?, ?, ?, NOW(), NOW())`,
-			userID, dateArg, finalDistance, finalDuration, avgHR, aw.Type, notes); err != nil {
-			logErr("insert workout from completed assignment", err)
-		}
-	}
-
-	// Emit notification for coach
-	var studentName string
-	if err := h.DB.QueryRow("SELECT COALESCE(name, '') FROM users WHERE id = ?", userID).Scan(&studentName); err != nil {
-		logErr("fetch student name for status notification", err)
-	}
-	var coachID int64
-	var workoutTitle string
-	if err := h.DB.QueryRow("SELECT coach_id, title FROM assigned_workouts WHERE id = ?", awID).Scan(&coachID, &workoutTitle); err != nil {
-		logErr("fetch coach id and title for status notification", err)
-	}
-
-	if req.Status == "completed" || req.Status == "skipped" {
-		notifType := "workout_completed"
-		notifTitle := "notif_workout_completed_title"
-		notifBody := "notif_workout_completed_body"
-		if req.Status == "skipped" {
-			notifType = "workout_skipped"
-			notifTitle = "notif_workout_skipped_title"
-			notifBody = "notif_workout_skipped_body"
-		}
-		notifMeta := map[string]interface{}{
-			"workout_id":    awID,
-			"workout_title": workoutTitle,
-			"student_name":  studentName,
-		}
-		h.Notification.CreateNotification(coachID, notifType, notifTitle, notifBody, notifMeta, nil)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Status updated", "status": req.Status})
@@ -951,165 +357,29 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 
 // GetDailySummary handles GET /api/coach/daily-summary?date=YYYY-MM-DD
 func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
-	// Defensive guard consistent with all other handlers in this file
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {
 		writeError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
-	// Pattern repeated across coach handlers (tech debt: could be extracted to helper)
-	var isCoach bool
-	if err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to verify coach status")
-		return
-	}
-	if !isCoach {
-		writeError(w, http.StatusForbidden, "User is not a coach")
-		return
-	}
-
 	date := r.URL.Query().Get("date")
 	if date == "" {
-		writeError(w, http.StatusBadRequest, "date parameter is required")
-		return
+		date = time.Now().Format("2006-01-02")
 	}
 	if _, err := time.Parse("2006-01-02", date); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid date format")
 		return
 	}
 
-	type WorkoutSummary struct {
-		ID              int64                   `json:"id"`
-		Title           string                  `json:"title"`
-		Type            string                  `json:"type"`
-		DistanceKm      float64                 `json:"distance_km"`
-		DurationSeconds int                     `json:"duration_seconds"`
-		Description     string                  `json:"description"`
-		Notes           string                  `json:"notes"`
-		Status          string                  `json:"status"`
-		ResultTimeSec   *int                    `json:"result_time_seconds"`
-		ResultDistKm    *float64                `json:"result_distance_km"`
-		ResultHR        *int                    `json:"result_heart_rate"`
-		ResultFeeling   *int                    `json:"result_feeling"`
-		DueDate         string                  `json:"due_date"`
-		Segments        []models.WorkoutSegment `json:"segments"`
-	}
-
-	type DailySummaryItem struct {
-		StudentID     int64           `json:"student_id"`
-		StudentName   string          `json:"student_name"`
-		StudentAvatar *string         `json:"student_avatar"`
-		Workout       *WorkoutSummary `json:"assigned_workout"`
-	}
-
-	rows, err := h.DB.Query(`
-		SELECT
-			u.id, u.name,
-			CASE WHEN u.custom_avatar IS NOT NULL AND u.custom_avatar != '' THEN u.custom_avatar ELSE u.avatar_url END as avatar,
-			aw.id, aw.title, COALESCE(aw.type, ''), aw.distance_km, aw.duration_seconds,
-			COALESCE(aw.description, ''), COALESCE(aw.notes, ''), aw.status,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.due_date, aw.created_at
-		FROM coach_students cs
-		JOIN users u ON u.id = cs.student_id
-		LEFT JOIN assigned_workouts aw
-			ON aw.student_id = cs.student_id
-			AND aw.coach_id = ?
-			AND aw.due_date = ?
-		WHERE cs.coach_id = ? AND cs.status = 'active'
-		ORDER BY u.name ASC, aw.created_at DESC
-	`, userID, date, userID) // Note: userID appears twice — coach_id used in both JOIN and WHERE
+	items, err := h.svc.GetDailySummary(userID, date)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch daily summary")
-		return
-	}
-	defer rows.Close()
-
-	// De-duplicate: keep first workout per student (most recent due to ORDER BY created_at DESC)
-	seen := map[int64]bool{}
-	items := []DailySummaryItem{}
-
-	for rows.Next() {
-		var studentID int64
-		var studentName string
-		var studentAvatar sql.NullString
-
-		var awID sql.NullInt64
-		var awTitle, awType, awDesc, awNotes, awStatus sql.NullString
-		var awDist sql.NullFloat64
-		var awDur sql.NullInt64
-		var awResultTimeSec, awResultHR, awResultFeeling sql.NullInt64
-		var awResultDistKm sql.NullFloat64
-		var awDueDate sql.NullString
-		var awCreatedAt sql.NullTime // scanned to satisfy column count; ORDER BY in SQL handles dedup priority
-
-		if err := rows.Scan(
-			&studentID, &studentName, &studentAvatar,
-			&awID, &awTitle, &awType, &awDist, &awDur,
-			&awDesc, &awNotes, &awStatus,
-			&awResultTimeSec, &awResultDistKm, &awResultHR, &awResultFeeling,
-			&awDueDate, &awCreatedAt,
-		); err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to scan daily summary")
+		if errors.Is(err, services.ErrNotCoach) {
+			writeError(w, http.StatusForbidden, "User is not a coach")
 			return
 		}
-
-		if seen[studentID] {
-			continue
-		}
-		seen[studentID] = true
-
-		item := DailySummaryItem{
-			StudentID:   studentID,
-			StudentName: studentName,
-		}
-		if studentAvatar.Valid && studentAvatar.String != "" {
-			item.StudentAvatar = &studentAvatar.String
-		}
-
-		if awID.Valid {
-			ws := &WorkoutSummary{
-				ID:              awID.Int64,
-				Title:           awTitle.String,
-				Type:            awType.String,
-				DistanceKm:      awDist.Float64,
-				DurationSeconds: int(awDur.Int64),
-				Description:     awDesc.String,
-				Notes:           awNotes.String,
-				Status:          awStatus.String,
-				Segments:        []models.WorkoutSegment{},
-			}
-			if awResultTimeSec.Valid {
-				v := int(awResultTimeSec.Int64)
-				ws.ResultTimeSec = &v
-			}
-			if awResultDistKm.Valid {
-				ws.ResultDistKm = &awResultDistKm.Float64
-			}
-			if awResultHR.Valid {
-				v := int(awResultHR.Int64)
-				ws.ResultHR = &v
-			}
-			if awResultFeeling.Valid {
-				v := int(awResultFeeling.Int64)
-				ws.ResultFeeling = &v
-			}
-			if awDueDate.Valid {
-				ws.DueDate = awDueDate.String
-			}
-			item.Workout = ws
-		}
-
-		items = append(items, item)
-	}
-
-	// Load segments for all workouts — one query per workout (N+1).
-	// Acceptable for this app's scale (coaches typically have <30 students).
-	for i, item := range items {
-		if item.Workout != nil {
-			items[i].Workout.Segments = fetchSegments(h.DB, item.Workout.ID)
-		}
+		writeError(w, http.StatusInternalServerError, "Failed to fetch daily summary")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, items)

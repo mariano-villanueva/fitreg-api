@@ -54,6 +54,9 @@ func main() {
 			// AssignmentMessage domain (Task 4)
 			repository.NewAssignmentMessageRepository,
 			services.NewAssignmentMessageService,
+			// Coach domain (Task 5)
+			repository.NewCoachRepository,
+			services.NewCoachService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,

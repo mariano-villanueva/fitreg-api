@@ -16,3 +16,6 @@ var ErrInvitationNotPending = errors.New("invitation is no longer pending")
 
 // ErrStudentMaxCoaches is returned when a student already has the maximum number of coaches.
 var ErrStudentMaxCoaches = errors.New("student has reached the maximum number of coaches")
+
+// ErrWorkoutFinished is returned when trying to edit or delete a non-pending assigned workout.
+var ErrWorkoutFinished = errors.New("cannot edit a finished workout")
