@@ -34,6 +34,9 @@ func main() {
 			repository.NewUserRepository,
 			services.NewAuthService,
 			services.NewUserService,
+			// Template domain
+			repository.NewTemplateRepository,
+			services.NewTemplateService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,

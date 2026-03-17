@@ -40,3 +40,15 @@ type UserRepository interface {
 	UploadAvatar(id int64, image string) error
 	DeleteAvatar(id int64) error
 }
+
+// TemplateRepository handles all template-related database operations.
+type TemplateRepository interface {
+	Create(coachID int64, req models.CreateTemplateRequest) (int64, error)
+	GetByID(id int64) (models.WorkoutTemplate, error)
+	List(coachID int64) ([]models.WorkoutTemplate, error)
+	Update(id, coachID int64, req models.CreateTemplateRequest) error
+	Delete(id, coachID int64) (bool, error)
+	GetSegments(templateID int64) ([]models.TemplateSegment, error)
+	ReplaceSegments(templateID int64, segs []models.SegmentRequest) error
+	GetCoachID(id int64) (int64, error)
+}
