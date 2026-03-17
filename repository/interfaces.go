@@ -162,3 +162,15 @@ type AssignmentMessageRepository interface {
 	// GetFileUUID resolves a file_id to its download UUID.
 	GetFileUUID(fileID int64) (string, error)
 }
+
+// AdminRepository handles admin-only database operations.
+type AdminRepository interface {
+	IsAdmin(userID int64) (bool, error)
+	GetStats() (totalUsers, totalCoaches, totalRatings, pendingAchievements int, err error)
+	ListUsers(search, role, sortCol, sortOrder string, limit, offset int) (users []models.AdminUser, total int, err error)
+	UpdateUserRoles(targetID int64, isCoach, isAdmin *bool) error
+	ListPendingAchievements() ([]models.AdminPendingAchievement, error)
+	VerifyAchievement(achID, adminID int64) (coachID int64, eventName string, err error)
+	RejectAchievement(achID int64, reason string) (coachID int64, eventName string, err error)
+	GetFileUUID(fileID int64) (string, error)
+}
