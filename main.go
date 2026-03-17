@@ -27,23 +27,25 @@ func main() {
 			// Workout domain
 			repository.NewWorkoutRepository,
 			services.NewWorkoutService,
-			handlers.NewWorkoutHandler,
-			// Handlers (no dependencies on other handlers)
+			// File domain
+			repository.NewFileRepository,
+			services.NewFileService,
+			// Auth + User domain (shared UserRepository)
+			repository.NewUserRepository,
+			services.NewAuthService,
+			// Handlers
 			handlers.NewAuthHandler,
+			handlers.NewWorkoutHandler,
 			handlers.NewCoachProfileHandler,
 			handlers.NewRatingHandler,
 			handlers.NewTemplateHandler,
 			handlers.NewNotificationHandler,
-			// Handlers that depend on NotificationHandler
 			handlers.NewUserHandler,
 			handlers.NewAchievementHandler,
 			handlers.NewAssignmentMessageHandler,
 			handlers.NewInvitationHandler,
 			handlers.NewAdminHandler,
 			handlers.NewCoachHandler,
-			// File domain
-			repository.NewFileRepository,
-			services.NewFileService,
 			handlers.NewFileHandler,
 			router.New,
 		),

@@ -51,7 +51,7 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	u.HasCoach = hasCoach
 	if hasCoach {
-		fillCoachInfo(h.DB, userID, &u)
+		fillCoachInfoDB(h.DB, userID, &u)
 	}
 	writeJSON(w, http.StatusOK, u)
 }
@@ -292,4 +292,80 @@ func (h *UserHandler) DeleteAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Avatar removed"})
+}
+
+// TEMPORARY: These will be removed in Task 4 when UserHandler is migrated to use UserService.
+// They are duplicated here to keep the build passing after Task 3 removed them from auth_handler.go.
+
+type userRow = models.UserRow // alias to the new models type
+
+func rowToJSON(row models.UserRow) models.UserProfile {
+	u := models.UserProfile{
+		ID:        row.ID,
+		GoogleID:  row.GoogleID,
+		Email:     row.Email,
+		Name:      row.Name,
+		Language:  "es",
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}
+	if row.CustomAvatar.Valid {
+		u.CustomAvatar = row.CustomAvatar.String
+		u.AvatarURL = row.CustomAvatar.String
+	}
+	if row.Sex.Valid {
+		u.Sex = row.Sex.String
+	}
+	if row.BirthDate.Valid {
+		bd := truncateDate(row.BirthDate.String)
+		u.BirthDate = bd
+		u.Age = models.CalculateAge(bd)
+	}
+	if row.WeightKg.Valid {
+		u.WeightKg = row.WeightKg.Float64
+	}
+	if row.HeightCm.Valid {
+		u.HeightCm = int(row.HeightCm.Int64)
+	}
+	if row.Language.Valid {
+		u.Language = row.Language.String
+	}
+	if row.IsCoach.Valid {
+		u.IsCoach = row.IsCoach.Bool
+	}
+	if row.IsAdmin.Valid {
+		u.IsAdmin = row.IsAdmin.Bool
+	}
+	if row.CoachDescription.Valid {
+		u.CoachDescription = row.CoachDescription.String
+	}
+	if row.CoachPublic.Valid {
+		u.CoachPublic = row.CoachPublic.Bool
+	}
+	if row.OnboardingCompleted.Valid {
+		u.OnboardingCompleted = row.OnboardingCompleted.Bool
+	}
+	return u
+}
+
+func fillCoachInfoDB(db *sql.DB, studentID int64, u *models.UserProfile) {
+	var coachID int64
+	var coachName string
+	var coachAvatar sql.NullString
+	err := db.QueryRow(`
+		SELECT u.id, u.name, COALESCE(u.custom_avatar, '')
+		FROM coach_students cs
+		JOIN users u ON u.id = cs.coach_id
+		WHERE cs.student_id = ? AND cs.status = 'active'
+		LIMIT 1
+	`, studentID).Scan(&coachID, &coachName, &coachAvatar)
+	if err != nil {
+		logErr("fetch coach info for user", err)
+		return
+	}
+	u.CoachID = coachID
+	u.CoachName = coachName
+	if coachAvatar.Valid {
+		u.CoachAvatar = coachAvatar.String
+	}
 }
