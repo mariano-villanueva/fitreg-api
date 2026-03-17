@@ -33,6 +33,7 @@ func main() {
 			// Auth + User domain (shared UserRepository)
 			repository.NewUserRepository,
 			services.NewAuthService,
+			services.NewUserService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,
