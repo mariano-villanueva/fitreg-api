@@ -55,7 +55,6 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid file type. Allowed: JPG, PNG, WebP")
 		return
 	}
-	_ = ext
 
 	if header.Size > maxFileSize {
 		writeError(w, http.StatusBadRequest, "File too large (max 5MB)")
