@@ -66,3 +66,10 @@ type CoachProfileRepository interface {
 	GetRatings(coachID int64) ([]models.CoachRating, error)
 	GetFileUUID(fileID int64) (string, error)
 }
+
+// RatingRepository handles all rating-related database operations.
+type RatingRepository interface {
+	IsStudentOf(coachID, studentID int64) (bool, error)
+	Upsert(coachID, studentID int64, rating int, comment string) error
+	List(coachID int64) ([]models.CoachRating, error)
+}

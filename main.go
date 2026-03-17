@@ -40,6 +40,9 @@ func main() {
 			// CoachProfile domain
 			repository.NewCoachProfileRepository,
 			services.NewCoachProfileService,
+			// Rating domain
+			repository.NewRatingRepository,
+			services.NewRatingService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,
