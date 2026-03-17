@@ -13,12 +13,12 @@ import (
 )
 
 type UserHandler struct {
-	svc *services.UserService
-	nh  *NotificationHandler // interim: kept until Plan C migrates NotificationHandler
+	svc      *services.UserService
+	notifSvc *services.NotificationService
 }
 
-func NewUserHandler(svc *services.UserService, nh *NotificationHandler) *UserHandler {
-	return &UserHandler{svc: svc, nh: nh}
+func NewUserHandler(svc *services.UserService, notifSvc *services.NotificationService) *UserHandler {
+	return &UserHandler{svc: svc, notifSvc: notifSvc}
 }
 
 func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -136,9 +136,8 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 		{Key: "reject", Label: "notif_coach_request_reject", Style: "danger"},
 	}
 
-	// Interim: call NotificationHandler directly (until Plan C)
 	for _, adminID := range adminIDs {
-		h.nh.CreateNotification(adminID, "coach_request",
+		h.notifSvc.Create(adminID, "coach_request",
 			"notif_coach_request_title", "notif_coach_request_body",
 			meta, actions)
 	}
