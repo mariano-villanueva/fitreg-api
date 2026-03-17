@@ -52,3 +52,17 @@ type TemplateRepository interface {
 	ReplaceSegments(templateID int64, segs []models.SegmentRequest) error
 	GetCoachID(id int64) (int64, error)
 }
+
+// CoachProfileRepository handles all coach profile-related database operations.
+type CoachProfileRepository interface {
+	UpdateProfile(coachID int64, req models.UpdateCoachProfileRequest) error
+	IsCoach(userID int64) (bool, error)
+	ListCoaches(search, locality, level, sortBy string, limit, offset int) ([]models.CoachListItem, int, error)
+	GetCoachProfile(coachID int64) (models.CoachPublicProfile, error)
+	IsStudentOf(coachID, studentID int64) (bool, error)
+	CountStudents(coachID int64) (int, error)
+	CountVerifiedAchievements(coachID int64) (int, error)
+	GetAchievements(coachID int64) ([]models.CoachAchievement, error)
+	GetRatings(coachID int64) ([]models.CoachRating, error)
+	GetFileUUID(fileID int64) (string, error)
+}

@@ -37,6 +37,9 @@ func main() {
 			// Template domain
 			repository.NewTemplateRepository,
 			services.NewTemplateService,
+			// CoachProfile domain
+			repository.NewCoachProfileRepository,
+			services.NewCoachProfileService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,
