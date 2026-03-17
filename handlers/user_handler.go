@@ -9,15 +9,16 @@ import (
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
+	"github.com/fitreg/api/services"
 )
 
 type UserHandler struct {
-	DB *sql.DB
-	NH *NotificationHandler
+	svc      *services.UserService
+	notifSvc *services.NotificationService
 }
 
-func NewUserHandler(db *sql.DB, nh *NotificationHandler) *UserHandler {
-	return &UserHandler{DB: db, NH: nh}
+func NewUserHandler(svc *services.UserService, notifSvc *services.NotificationService) *UserHandler {
+	return &UserHandler{svc: svc, notifSvc: notifSvc}
 }
 
 func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -27,14 +28,7 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var row userRow
-	err := h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, custom_avatar, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
-		FROM users WHERE id = ?
-	`, userID).Scan(
-		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL, &row.CustomAvatar,
-		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
-	)
+	u, err := h.svc.GetProfile(userID)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "User not found")
 		return
@@ -44,15 +38,6 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u := rowToJSON(row)
-	var hasCoach bool
-	if err := h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM coach_students WHERE student_id = ? AND status = 'active')", userID).Scan(&hasCoach); err != nil {
-		logErr("check has coach for profile", err)
-	}
-	u.HasCoach = hasCoach
-	if hasCoach {
-		fillCoachInfo(h.DB, userID, &u)
-	}
 	writeJSON(w, http.StatusOK, u)
 }
 
@@ -69,38 +54,14 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var birthDate interface{} = req.BirthDate
-	if req.BirthDate == "" {
-		birthDate = nil
-	}
-	var sex interface{} = req.Sex
-	if req.Sex == "" {
-		sex = nil
-	}
-
-	_, err := h.DB.Exec(`
-		UPDATE users SET name = ?, sex = ?, birth_date = ?, weight_kg = ?, height_cm = ?, language = ?, onboarding_completed = ?, updated_at = NOW() WHERE id = ?
-	`, req.Name, sex, birthDate, req.WeightKg, req.HeightCm, req.Language, req.OnboardingCompleted, userID)
+	u, err := h.svc.UpdateProfile(userID, req)
 	if err != nil {
 		log.Printf("ERROR UpdateProfile: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to update profile")
 		return
 	}
 
-	var row userRow
-	err = h.DB.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url, custom_avatar, sex, birth_date, weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, created_at, updated_at
-		FROM users WHERE id = ?
-	`, userID).Scan(
-		&row.ID, &row.GoogleID, &row.Email, &row.Name, &row.AvatarURL, &row.CustomAvatar,
-		&row.Sex, &row.BirthDate, &row.WeightKg, &row.HeightCm, &row.Language, &row.IsCoach, &row.IsAdmin, &row.CoachDescription, &row.CoachPublic, &row.OnboardingCompleted, &row.CreatedAt, &row.UpdatedAt,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch updated profile")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, rowToJSON(row))
+	writeJSON(w, http.StatusOK, u)
 }
 
 func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
@@ -123,9 +84,8 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if already a coach
-	var isCoach bool
-	if err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach); err != nil {
+	isCoach, err := h.svc.IsCoach(userID)
+	if err != nil {
 		logErr("check is coach for request", err)
 	}
 	if isCoach {
@@ -133,47 +93,29 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if there's already a pending coach request
-	var pendingCount int
-	if err := h.DB.QueryRow(`
-		SELECT COUNT(*) FROM notifications
-		WHERE type = 'coach_request' AND actions IS NOT NULL
-		AND JSON_EXTRACT(metadata, '$.requester_id') = ?
-	`, userID).Scan(&pendingCount); err != nil {
+	pending, err := h.svc.HasPendingCoachRequest(userID)
+	if err != nil {
 		logErr("check pending coach request count", err)
 	}
-	if pendingCount > 0 {
+	if pending {
 		writeError(w, http.StatusConflict, "Coach request already pending")
 		return
 	}
 
-	// Save locality and level on user (levels as comma-separated string)
 	levelStr := strings.Join(req.Level, ",")
-	if _, err := h.DB.Exec("UPDATE users SET coach_locality = ?, coach_level = ?, updated_at = NOW() WHERE id = ?",
-		req.Locality, levelStr, userID); err != nil {
+	if err := h.svc.SetCoachLocality(userID, req.Locality, levelStr); err != nil {
 		logErr("update user coach locality and level", err)
 	}
 
-	// Get requester name
-	var requesterName, requesterAvatar string
-	if err := h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(custom_avatar, '') FROM users WHERE id = ?", userID).Scan(&requesterName, &requesterAvatar); err != nil {
+	requesterName, requesterAvatar, err := h.svc.GetNameAndAvatar(userID)
+	if err != nil {
 		logErr("fetch requester name for coach request", err)
 	}
 
-	// Get all admin users
-	rows, err := h.DB.Query("SELECT id FROM users WHERE is_admin = TRUE")
+	adminIDs, err := h.svc.GetAdminIDs()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to fetch admins")
 		return
-	}
-	defer rows.Close()
-
-	var adminIDs []int64
-	for rows.Next() {
-		var adminID int64
-		if err := rows.Scan(&adminID); err == nil {
-			adminIDs = append(adminIDs, adminID)
-		}
 	}
 
 	if len(adminIDs) == 0 {
@@ -182,7 +124,6 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create notification for each admin
 	meta := map[string]interface{}{
 		"requester_id":     userID,
 		"requester_name":   requesterName,
@@ -196,7 +137,7 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, adminID := range adminIDs {
-		h.NH.CreateNotification(adminID, "coach_request",
+		h.notifSvc.Create(adminID, "coach_request",
 			"notif_coach_request_title", "notif_coach_request_body",
 			meta, actions)
 	}
@@ -211,32 +152,14 @@ func (h *UserHandler) GetCoachRequestStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Check if already a coach
-	var isCoach bool
-	if err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach); err != nil {
-		logErr("check is coach for request status", err)
-	}
-	if isCoach {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
+	status, err := h.svc.GetCoachRequestStatus(userID)
+	if err != nil {
+		logErr("get coach request status", err)
+		writeError(w, http.StatusInternalServerError, "Failed to check status")
 		return
 	}
 
-	// Check if there's a pending coach request
-	var pendingCount int
-	if err := h.DB.QueryRow(`
-		SELECT COUNT(*) FROM notifications
-		WHERE type = 'coach_request' AND actions IS NOT NULL
-		AND JSON_EXTRACT(metadata, '$.requester_id') = ?
-	`, userID).Scan(&pendingCount); err != nil {
-		logErr("check pending coach request status", err)
-	}
-
-	if pendingCount > 0 {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "pending"})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "none"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 const maxAvatarSize = 500 * 1024 // 500KB base64
@@ -271,7 +194,7 @@ func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.DB.Exec("UPDATE users SET custom_avatar = ?, updated_at = NOW() WHERE id = ?", req.Image, userID); err != nil {
+	if err := h.svc.UploadAvatar(userID, req.Image); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to save avatar")
 		return
 	}
@@ -286,7 +209,7 @@ func (h *UserHandler) DeleteAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.DB.Exec("UPDATE users SET custom_avatar = NULL, updated_at = NOW() WHERE id = ?", userID); err != nil {
+	if err := h.svc.DeleteAvatar(userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to delete avatar")
 		return
 	}

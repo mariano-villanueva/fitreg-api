@@ -4,53 +4,103 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
+
+	"go.uber.org/fx"
 
 	"github.com/fitreg/api/config"
-	"github.com/fitreg/api/database"
+	"github.com/fitreg/api/handlers"
+	"github.com/fitreg/api/middleware"
+	dbprovider "github.com/fitreg/api/providers/db"
+	"github.com/fitreg/api/providers/storage"
+	"github.com/fitreg/api/repository"
 	"github.com/fitreg/api/router"
-	"github.com/fitreg/api/storage"
+	"github.com/fitreg/api/services"
 )
 
 func main() {
-	cfg := config.Load()
+	fx.New(
+		fx.Provide(
+			config.Load,
+			dbprovider.New,
+			storage.New,
+			// Workout domain
+			repository.NewWorkoutRepository,
+			services.NewWorkoutService,
+			// File domain
+			repository.NewFileRepository,
+			services.NewFileService,
+			// Auth + User domain (shared UserRepository)
+			repository.NewUserRepository,
+			services.NewAuthService,
+			services.NewUserService,
+			// Template domain
+			repository.NewTemplateRepository,
+			services.NewTemplateService,
+			// CoachProfile domain
+			repository.NewCoachProfileRepository,
+			services.NewCoachProfileService,
+			// Rating domain
+			repository.NewRatingRepository,
+			services.NewRatingService,
+			// Notification domain
+			repository.NewNotificationRepository,
+			repository.NewInvitationRepository,
+			services.NewNotificationService,
+			services.NewInvitationService,
+			// Achievement domain (Task 3)
+			repository.NewAchievementRepository,
+			services.NewAchievementService,
+			// AssignmentMessage domain (Task 4)
+			repository.NewAssignmentMessageRepository,
+			services.NewAssignmentMessageService,
+			// Coach domain (Task 5)
+			repository.NewCoachRepository,
+			services.NewCoachService,
+			// Admin domain (Task 6)
+			repository.NewAdminRepository,
+			services.NewAdminService,
+			// Handlers
+			handlers.NewAuthHandler,
+			handlers.NewWorkoutHandler,
+			handlers.NewCoachProfileHandler,
+			handlers.NewRatingHandler,
+			handlers.NewTemplateHandler,
+			handlers.NewNotificationHandler,
+			handlers.NewUserHandler,
+			handlers.NewAchievementHandler,
+			handlers.NewAssignmentMessageHandler,
+			handlers.NewInvitationHandler,
+			handlers.NewAdminHandler,
+			handlers.NewCoachHandler,
+			handlers.NewFileHandler,
+			router.New,
+		),
+		fx.Invoke(startServer),
+	).Run()
+}
 
-	db, err := database.Connect(cfg.DSN())
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+func startServer(mux *http.ServeMux, cfg *config.Config, lc fx.Lifecycle) {
+	handler := middleware.CORS(middleware.Auth(cfg.JWTSecret)(mux))
+	srv := &http.Server{
+		Addr:         ":" + cfg.ServerPort,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
-	defer db.Close()
-	log.Println("Connected to MySQL database")
-
-	// Initialize storage
-	var store storage.Storage
-	switch cfg.StorageProvider {
-	case "s3":
-		s3Store, err := storage.NewS3Storage(context.Background(), storage.S3Config{
-			Bucket:    cfg.S3Bucket,
-			Region:    cfg.S3Region,
-			AccessKey: cfg.S3AccessKey,
-			SecretKey: cfg.S3SecretKey,
-			Endpoint:  cfg.S3Endpoint,
-		})
-		if err != nil {
-			log.Fatalf("Failed to initialize S3 storage: %v", err)
-		}
-		store = s3Store
-		log.Println("Using S3 storage")
-	default:
-		localStore, err := storage.NewLocalStorage(cfg.LocalStoragePath)
-		if err != nil {
-			log.Fatalf("Failed to initialize local storage: %v", err)
-		}
-		store = localStore
-		log.Printf("Using local storage at %s", cfg.LocalStoragePath)
-	}
-
-	handler := router.New(db, cfg.GoogleClientID, cfg.JWTSecret, store)
-
-	addr := ":" + cfg.ServerPort
-	log.Printf("Server starting on %s", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
-		log.Fatalf("Server failed: %v", err)
-	}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			go func() {
+				log.Printf("Server listening on :%s", cfg.ServerPort)
+				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					log.Printf("Server error: %v", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			return srv.Shutdown(ctx)
+		},
+	})
 }

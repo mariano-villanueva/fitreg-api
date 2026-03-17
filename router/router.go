@@ -1,36 +1,35 @@
 package router
 
 import (
-	"database/sql"
 	"net/http"
 	"strings"
 
+	"github.com/fitreg/api/config"
 	"github.com/fitreg/api/handlers"
-	"github.com/fitreg/api/middleware"
-	"github.com/fitreg/api/storage"
 )
 
-func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) http.Handler {
+func New(
+	workout *handlers.WorkoutHandler,
+	coach *handlers.CoachHandler,
+	auth *handlers.AuthHandler,
+	user *handlers.UserHandler,
+	invitation *handlers.InvitationHandler,
+	notification *handlers.NotificationHandler,
+	template *handlers.TemplateHandler,
+	achievement *handlers.AchievementHandler,
+	rating *handlers.RatingHandler,
+	coachProfile *handlers.CoachProfileHandler,
+	assignmentMessage *handlers.AssignmentMessageHandler,
+	admin *handlers.AdminHandler,
+	file *handlers.FileHandler,
+	cfg *config.Config,
+) *http.ServeMux {
 	mux := http.NewServeMux()
-
-	ah := handlers.NewAuthHandler(db, googleClientID, jwtSecret)
-	nh := handlers.NewNotificationHandler(db)
-	uh := handlers.NewUserHandler(db, nh)
-	wh := handlers.NewWorkoutHandler(db)
-	ih := handlers.NewInvitationHandler(db, nh)
-	ch := handlers.NewCoachHandler(db, nh)
-	cph := handlers.NewCoachProfileHandler(db)
-	achh := handlers.NewAchievementHandler(db, nh)
-	rth := handlers.NewRatingHandler(db)
-	adm := handlers.NewAdminHandler(db, nh)
-	fh := handlers.NewFileHandler(db, store)
-	th := handlers.NewTemplateHandler(db)
-	amh := handlers.NewAssignmentMessageHandler(db, nh)
 
 	// Auth routes (public)
 	mux.HandleFunc("/api/auth/google", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			ah.GoogleLogin(w, r)
+			auth.GoogleLogin(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -40,9 +39,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/me", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			uh.GetProfile(w, r)
+			user.GetProfile(w, r)
 		case http.MethodPut:
-			uh.UpdateProfile(w, r)
+			user.UpdateProfile(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -52,9 +51,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/me/avatar", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			uh.UploadAvatar(w, r)
+			user.UploadAvatar(w, r)
 		case http.MethodDelete:
-			uh.DeleteAvatar(w, r)
+			user.DeleteAvatar(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -64,9 +63,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/workouts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			wh.ListWorkouts(w, r)
+			workout.ListWorkouts(w, r)
 		case http.MethodPost:
-			wh.CreateWorkout(w, r)
+			workout.CreateWorkout(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -75,11 +74,11 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/workouts/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			wh.GetWorkout(w, r)
+			workout.GetWorkout(w, r)
 		case http.MethodPut:
-			wh.UpdateWorkout(w, r)
+			workout.UpdateWorkout(w, r)
 		case http.MethodDelete:
-			wh.DeleteWorkout(w, r)
+			workout.DeleteWorkout(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -89,9 +88,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach-request", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			uh.GetCoachRequestStatus(w, r)
+			user.GetCoachRequestStatus(w, r)
 		case http.MethodPost:
-			uh.RequestCoach(w, r)
+			user.RequestCoach(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -101,9 +100,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach/students", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			ch.ListStudents(w, r)
+			coach.ListStudents(w, r)
 		case http.MethodPost:
-			ch.AddStudent(w, r)
+			coach.AddStudent(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -112,7 +111,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach/students/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/workouts") {
 			if r.Method == http.MethodGet {
-				ch.GetStudentWorkouts(w, r)
+				coach.GetStudentWorkouts(w, r)
 			} else {
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
@@ -124,7 +123,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	// Coach daily summary route
 	mux.HandleFunc("/api/coach/daily-summary", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			ch.GetDailySummary(w, r)
+			coach.GetDailySummary(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -134,9 +133,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach/templates", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			th.List(w, r)
+			template.List(w, r)
 		case http.MethodPost:
-			th.Create(w, r)
+			template.Create(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -145,11 +144,11 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach/templates/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			th.Get(w, r)
+			template.Get(w, r)
 		case http.MethodPut:
-			th.Update(w, r)
+			template.Update(w, r)
 		case http.MethodDelete:
-			th.Delete(w, r)
+			template.Delete(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -159,9 +158,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach/assigned-workouts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			ch.ListAssignedWorkouts(w, r)
+			coach.ListAssignedWorkouts(w, r)
 		case http.MethodPost:
-			ch.CreateAssignedWorkout(w, r)
+			coach.CreateAssignedWorkout(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -170,11 +169,11 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach/assigned-workouts/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			ch.GetAssignedWorkout(w, r)
+			coach.GetAssignedWorkout(w, r)
 		case http.MethodPut:
-			ch.UpdateAssignedWorkout(w, r)
+			coach.UpdateAssignedWorkout(w, r)
 		case http.MethodDelete:
-			ch.DeleteAssignedWorkout(w, r)
+			coach.DeleteAssignedWorkout(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -183,7 +182,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	// Student assigned workouts routes
 	mux.HandleFunc("/api/my-assigned-workouts", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			ch.GetMyAssignedWorkouts(w, r)
+			coach.GetMyAssignedWorkouts(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -191,7 +190,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 
 	mux.HandleFunc("/api/my-assigned-workouts/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/status") {
-			ch.UpdateAssignedWorkoutStatus(w, r)
+			coach.UpdateAssignedWorkoutStatus(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -200,7 +199,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	// Coach profile routes
 	mux.HandleFunc("/api/coach/profile", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
-			cph.UpdateCoachProfile(w, r)
+			coachProfile.UpdateCoachProfile(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -210,9 +209,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach/achievements", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			achh.ListMyAchievements(w, r)
+			achievement.ListMyAchievements(w, r)
 		case http.MethodPost:
-			achh.CreateAchievement(w, r)
+			achievement.CreateAchievement(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -220,14 +219,14 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 
 	mux.HandleFunc("/api/coach/achievements/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/visibility") {
-			achh.ToggleVisibility(w, r)
+			achievement.ToggleVisibility(w, r)
 			return
 		}
 		switch r.Method {
 		case http.MethodPut:
-			achh.UpdateAchievement(w, r)
+			achievement.UpdateAchievement(w, r)
 		case http.MethodDelete:
-			achh.DeleteAchievement(w, r)
+			achievement.DeleteAchievement(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -236,7 +235,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	// Coach directory routes
 	mux.HandleFunc("/api/coaches", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			cph.ListCoaches(w, r)
+			coachProfile.ListCoaches(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -246,16 +245,16 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 		if strings.HasSuffix(r.URL.Path, "/ratings") {
 			switch r.Method {
 			case http.MethodGet:
-				rth.GetRatings(w, r)
+				rating.GetRatings(w, r)
 			case http.MethodPost:
-				rth.UpsertRating(w, r)
+				rating.UpsertRating(w, r)
 			default:
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
 			return
 		}
 		if r.Method == http.MethodGet {
-			cph.GetCoachProfile(w, r)
+			coachProfile.GetCoachProfile(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -264,7 +263,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	// Admin routes
 	mux.HandleFunc("/api/admin/stats", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			adm.GetStats(w, r)
+			admin.GetStats(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -272,7 +271,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 
 	mux.HandleFunc("/api/admin/users", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			adm.ListUsers(w, r)
+			admin.ListUsers(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -280,7 +279,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 
 	mux.HandleFunc("/api/admin/users/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
-			adm.UpdateUser(w, r)
+			admin.UpdateUser(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -288,7 +287,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 
 	mux.HandleFunc("/api/admin/achievements/pending", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			adm.PendingAchievements(w, r)
+			admin.PendingAchievements(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -297,9 +296,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/admin/achievements/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			if strings.HasSuffix(r.URL.Path, "/verify") {
-				adm.VerifyAchievement(w, r)
+				admin.VerifyAchievement(w, r)
 			} else if strings.HasSuffix(r.URL.Path, "/reject") {
-				adm.RejectAchievement(w, r)
+				admin.RejectAchievement(w, r)
 			} else {
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
@@ -312,9 +311,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/invitations", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			ih.ListInvitations(w, r)
+			invitation.ListInvitations(w, r)
 		case http.MethodPost:
-			ih.CreateInvitation(w, r)
+			invitation.CreateInvitation(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -323,7 +322,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/invitations/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/respond") {
 			if r.Method == http.MethodPut {
-				ih.RespondInvitation(w, r)
+				invitation.RespondInvitation(w, r)
 			} else {
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
@@ -331,9 +330,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 		}
 		switch r.Method {
 		case http.MethodGet:
-			ih.GetInvitation(w, r)
+			invitation.GetInvitation(w, r)
 		case http.MethodDelete:
-			ih.CancelInvitation(w, r)
+			invitation.CancelInvitation(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -342,7 +341,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	// Notification routes
 	mux.HandleFunc("/api/notifications", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			nh.ListNotifications(w, r)
+			notification.ListNotifications(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -350,7 +349,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 
 	mux.HandleFunc("/api/notifications/unread-count", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			nh.UnreadCount(w, r)
+			notification.UnreadCount(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -358,7 +357,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 
 	mux.HandleFunc("/api/notifications/read-all", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
-			nh.MarkAllRead(w, r)
+			notification.MarkAllRead(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -367,7 +366,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/notifications/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/action") {
 			if r.Method == http.MethodPost {
-				nh.ExecuteAction(w, r)
+				notification.ExecuteAction(w, r)
 			} else {
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
@@ -375,7 +374,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 		}
 		if strings.HasSuffix(r.URL.Path, "/read") {
 			if r.Method == http.MethodPut {
-				nh.MarkRead(w, r)
+				notification.MarkRead(w, r)
 			} else {
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
@@ -388,9 +387,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/notification-preferences", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			nh.GetPreferences(w, r)
+			notification.GetPreferences(w, r)
 		case http.MethodPut:
-			nh.UpdatePreferences(w, r)
+			notification.UpdatePreferences(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -400,7 +399,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/coach-students/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/end") {
 			if r.Method == http.MethodPut {
-				ch.EndRelationship(w, r)
+				coach.EndRelationship(w, r)
 			} else {
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
@@ -412,7 +411,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	// File routes
 	mux.HandleFunc("/api/files", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			fh.Upload(w, r)
+			file.Upload(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -421,14 +420,14 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/files/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/download") {
 			if r.Method == http.MethodGet {
-				fh.Download(w, r)
+				file.Download(w, r)
 			} else {
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
 			return
 		}
 		if r.Method == http.MethodDelete {
-			fh.Delete(w, r)
+			file.Delete(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -438,7 +437,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	mux.HandleFunc("/api/assignment-messages/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/read") {
 			if r.Method == http.MethodPut {
-				amh.MarkRead(w, r)
+				assignmentMessage.MarkRead(w, r)
 			} else {
 				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 			}
@@ -446,9 +445,9 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 		}
 		switch r.Method {
 		case http.MethodGet:
-			amh.ListMessages(w, r)
+			assignmentMessage.ListMessages(w, r)
 		case http.MethodPost:
-			amh.SendMessage(w, r)
+			assignmentMessage.SendMessage(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -457,7 +456,7 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 	// Assignment detail (both coach and student)
 	mux.HandleFunc("/api/assigned-workout-detail/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			amh.GetAssignedWorkoutDetail(w, r)
+			assignmentMessage.GetAssignedWorkoutDetail(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -469,6 +468,5 @@ func New(db *sql.DB, googleClientID, jwtSecret string, store storage.Storage) ht
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// Apply middleware: CORS -> Auth
-	return middleware.CORS(middleware.Auth(jwtSecret)(mux))
+	return mux
 }

@@ -1,15 +1,18 @@
-package database
+package db
 
 import (
 	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/fitreg/api/config"
 	_ "github.com/go-sql-driver/mysql"
 )
 
-func Connect(dsn string) (*sql.DB, error) {
-	db, err := sql.Open("mysql", dsn)
+// New constructs and pings a *sql.DB using configuration from cfg.
+// FX will inject *config.Config automatically.
+func New(cfg *config.Config) (*sql.DB, error) {
+	db, err := sql.Open("mysql", cfg.DSN())
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

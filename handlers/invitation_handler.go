@@ -1,30 +1,22 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
+	"github.com/fitreg/api/services"
 )
 
 type InvitationHandler struct {
-	DB           *sql.DB
-	Notification *NotificationHandler
+	svc *services.InvitationService
 }
 
-func NewInvitationHandler(db *sql.DB, nh *NotificationHandler) *InvitationHandler {
-	return &InvitationHandler{DB: db, Notification: nh}
-}
-
-func (h *InvitationHandler) isAdmin(userID int64) bool {
-	var isAdmin bool
-	err := h.DB.QueryRow("SELECT COALESCE(is_admin, FALSE) FROM users WHERE id = ?", userID).Scan(&isAdmin)
-	return err == nil && isAdmin
+func NewInvitationHandler(svc *services.InvitationService) *InvitationHandler {
+	return &InvitationHandler{svc: svc}
 }
 
 func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Request) {
@@ -40,150 +32,27 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Find receiver
-	var receiverID int64
-	var receiverIsCoach, receiverCoachPublic bool
-	if req.ReceiverID > 0 {
-		receiverID = req.ReceiverID
-		err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE), COALESCE(coach_public, FALSE) FROM users WHERE id = ?", receiverID).Scan(&receiverIsCoach, &receiverCoachPublic)
-		if err != nil {
+	inv, err := h.svc.Create(userID, req)
+	if err != nil {
+		switch err {
+		case services.ErrNotFound:
 			writeError(w, http.StatusNotFound, "user_not_found")
-			return
-		}
-	} else {
-		err := h.DB.QueryRow("SELECT id, COALESCE(is_coach, FALSE), COALESCE(coach_public, FALSE) FROM users WHERE email = ?", req.ReceiverEmail).Scan(&receiverID, &receiverIsCoach, &receiverCoachPublic)
-		if err != nil {
-			writeError(w, http.StatusNotFound, "user_not_found")
-			return
-		}
-	}
-
-	// No self-invitation
-	if userID == receiverID {
-		writeError(w, http.StatusBadRequest, "cannot_invite_self")
-		return
-	}
-
-	// Validate type-specific rules
-	if req.Type == "coach_invite" {
-		var isCoach bool
-		if err := h.DB.QueryRow("SELECT COALESCE(is_coach, FALSE) FROM users WHERE id = ?", userID).Scan(&isCoach); err != nil {
-			logErr("check is coach for invitation", err)
-		}
-		if !isCoach {
+		case services.ErrCannotInviteSelf:
+			writeError(w, http.StatusBadRequest, "cannot_invite_self")
+		case services.ErrNotCoach:
 			writeError(w, http.StatusBadRequest, "not_a_coach")
-			return
-		}
-	} else if req.Type == "student_request" {
-		if !receiverIsCoach || !receiverCoachPublic {
+		case services.ErrReceiverNotCoach:
 			writeError(w, http.StatusBadRequest, "receiver_not_coach")
-			return
+		case services.ErrInvitationAlreadyPending:
+			writeError(w, http.StatusBadRequest, "invitation_already_pending")
+		case services.ErrAlreadyConnected:
+			writeError(w, http.StatusBadRequest, "already_connected")
+		case services.ErrStudentMaxCoaches:
+			writeError(w, http.StatusBadRequest, "student_max_coaches")
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to create invitation")
 		}
-	} else {
-		writeError(w, http.StatusBadRequest, "Invalid invitation type")
 		return
-	}
-
-	// Check no pending invitation exists between these users (either direction)
-	var pendingCount int
-	if err := h.DB.QueryRow(`
-		SELECT COUNT(*) FROM invitations
-		WHERE status = 'pending' AND (
-			(sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
-		)
-	`, userID, receiverID, receiverID, userID).Scan(&pendingCount); err != nil {
-		logErr("check pending invitations count", err)
-	}
-	if pendingCount > 0 {
-		writeError(w, http.StatusBadRequest, "invitation_already_pending")
-		return
-	}
-
-	// Check no active relationship exists
-	var activeCount int
-	if err := h.DB.QueryRow(`
-		SELECT COUNT(*) FROM coach_students
-		WHERE status = 'active' AND (
-			(coach_id = ? AND student_id = ?) OR (coach_id = ? AND student_id = ?)
-		)
-	`, userID, receiverID, receiverID, userID).Scan(&activeCount); err != nil {
-		logErr("check active relationships count", err)
-	}
-	if activeCount > 0 {
-		writeError(w, http.StatusBadRequest, "already_connected")
-		return
-	}
-
-	// Check MaxCoachesPerStudent (early check)
-	var studentID int64
-	if req.Type == "coach_invite" {
-		studentID = receiverID
-	} else {
-		studentID = userID
-	}
-	var studentCoachCount int
-	if err := h.DB.QueryRow("SELECT COUNT(*) FROM coach_students WHERE student_id = ? AND status = 'active'", studentID).Scan(&studentCoachCount); err != nil {
-		logErr("check student coach count", err)
-	}
-	if studentCoachCount >= models.MaxCoachesPerStudent {
-		writeError(w, http.StatusBadRequest, "student_max_coaches")
-		return
-	}
-
-	// Create invitation
-	result, err := h.DB.Exec(`
-		INSERT INTO invitations (type, sender_id, receiver_id, message, status)
-		VALUES (?, ?, ?, ?, 'pending')
-	`, req.Type, userID, receiverID, req.Message)
-	if err != nil {
-		log.Printf("ERROR creating invitation: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to create invitation")
-		return
-	}
-	invID, err := result.LastInsertId()
-	if err != nil {
-		logErr("get last insert id for invitation", err)
-	}
-
-	// Create notification for receiver
-	var senderName, senderAvatar string
-	if err := h.DB.QueryRow("SELECT COALESCE(name, ''), COALESCE(custom_avatar, '') FROM users WHERE id = ?", userID).Scan(&senderName, &senderAvatar); err != nil {
-		logErr("fetch sender info for invitation notification", err)
-	}
-
-	meta := map[string]interface{}{
-		"invitation_id": invID,
-		"sender_id":     userID,
-		"sender_name":   senderName,
-		"sender_avatar": senderAvatar,
-	}
-	actions := []models.NotificationAction{
-		{Key: "accept", Label: "invitation_accept", Style: "primary"},
-		{Key: "reject", Label: "invitation_reject", Style: "danger"},
-	}
-
-	var title, body string
-	if req.Type == "coach_invite" {
-		title = "notif_coach_invite_title"
-		body = "notif_coach_invite_body"
-	} else {
-		title = "notif_student_request_title"
-		body = "notif_student_request_body"
-	}
-	h.Notification.CreateNotification(receiverID, "invitation_received", title, body, meta, actions)
-
-	// Return created invitation
-	var inv models.Invitation
-	if err := h.DB.QueryRow(`
-		SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
-			COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
-		FROM invitations i
-		JOIN users s ON s.id = i.sender_id
-		JOIN users rv ON rv.id = i.receiver_id
-		WHERE i.id = ?
-	`, invID).Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
-		&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar); err != nil {
-		logErr("fetch created invitation", err)
 	}
 
 	writeJSON(w, http.StatusCreated, inv)
@@ -208,52 +77,10 @@ func (h *InvitationHandler) ListInvitations(w http.ResponseWriter, r *http.Reque
 	}
 	offset := (page - 1) * limit
 
-	query := `
-		SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
-			COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
-		FROM invitations i
-		JOIN users s ON s.id = i.sender_id
-		JOIN users rv ON rv.id = i.receiver_id
-		WHERE 1=1
-	`
-	args := []interface{}{}
-
-	if direction == "sent" {
-		query += " AND i.sender_id = ?"
-		args = append(args, userID)
-	} else if direction == "received" {
-		query += " AND i.receiver_id = ?"
-		args = append(args, userID)
-	} else {
-		query += " AND (i.sender_id = ? OR i.receiver_id = ?)"
-		args = append(args, userID, userID)
-	}
-
-	if status != "" {
-		query += " AND i.status = ?"
-		args = append(args, status)
-	}
-
-	query += " ORDER BY i.created_at DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, offset)
-
-	rows, err := h.DB.Query(query, args...)
+	invitations, err := h.svc.List(userID, status, direction, limit, offset)
 	if err != nil {
-		log.Printf("ERROR listing invitations: %v", err)
 		writeError(w, http.StatusInternalServerError, "Failed to fetch invitations")
 		return
-	}
-	defer rows.Close()
-
-	invitations := []models.Invitation{}
-	for rows.Next() {
-		var inv models.Invitation
-		if err := rows.Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
-			&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar); err != nil {
-			log.Printf("ERROR scanning invitation: %v", err)
-			continue
-		}
-		invitations = append(invitations, inv)
 	}
 
 	writeJSON(w, http.StatusOK, invitations)
@@ -272,28 +99,16 @@ func (h *InvitationHandler) GetInvitation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var inv models.Invitation
-	err = h.DB.QueryRow(`
-		SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
-			COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
-		FROM invitations i
-		JOIN users s ON s.id = i.sender_id
-		JOIN users rv ON rv.id = i.receiver_id
-		WHERE i.id = ?
-	`, invID).Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
-		&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Invitation not found")
-		return
-	}
+	inv, err := h.svc.GetByID(invID, userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch invitation")
-		return
-	}
-
-	// Check ownership
-	if inv.SenderID != userID && inv.ReceiverID != userID && !h.isAdmin(userID) {
-		writeError(w, http.StatusForbidden, "Access denied")
+		switch err {
+		case services.ErrNotFound:
+			writeError(w, http.StatusNotFound, "Invitation not found")
+		case services.ErrForbidden:
+			writeError(w, http.StatusForbidden, "Access denied")
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to fetch invitation")
+		}
 		return
 	}
 
@@ -320,49 +135,20 @@ func (h *InvitationHandler) RespondInvitation(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if req.Action != "accepted" && req.Action != "rejected" {
-		writeError(w, http.StatusBadRequest, "Action must be 'accepted' or 'rejected'")
-		return
-	}
-
-	// Fetch invitation and verify receiver
-	var invSenderID, invReceiverID int64
-	var invStatus, invType string
-	err = h.DB.QueryRow("SELECT sender_id, receiver_id, status, type FROM invitations WHERE id = ?", invID).Scan(&invSenderID, &invReceiverID, &invStatus, &invType)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Invitation not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch invitation")
-		return
-	}
-
-	if invReceiverID != userID && !h.isAdmin(userID) {
-		writeError(w, http.StatusForbidden, "Only the receiver can respond")
-		return
-	}
-
-	if invStatus != "pending" {
-		writeError(w, http.StatusConflict, "Invitation is no longer pending")
-		return
-	}
-
-	if req.Action == "accepted" {
-		if err := h.Notification.acceptInvitation(invID, userID); err != nil {
+	if err := h.svc.Respond(invID, userID, req.Action); err != nil {
+		switch err {
+		case services.ErrNotFound:
+			writeError(w, http.StatusNotFound, "Invitation not found")
+		case services.ErrOnlyReceiver:
+			writeError(w, http.StatusForbidden, err.Error())
+		case services.ErrInvitationNotPending:
 			writeError(w, http.StatusConflict, err.Error())
-			return
+		case services.ErrStudentMaxCoaches:
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to respond to invitation")
 		}
-	} else {
-		h.Notification.rejectInvitation(invID, userID)
-	}
-
-	// Nullify actions on related notification
-	if _, err := h.DB.Exec(`
-		UPDATE notifications SET actions = NULL
-		WHERE type = 'invitation_received' AND user_id = ? AND JSON_EXTRACT(metadata, '$.invitation_id') = ?
-	`, userID, invID); err != nil {
-		logErr("nullify invitation notification actions", err)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Invitation " + req.Action})
@@ -381,36 +167,18 @@ func (h *InvitationHandler) CancelInvitation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var senderID, receiverID int64
-	var status string
-	err = h.DB.QueryRow("SELECT sender_id, receiver_id, status FROM invitations WHERE id = ?", invID).Scan(&senderID, &receiverID, &status)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Invitation not found")
+	if err := h.svc.Cancel(invID, userID); err != nil {
+		switch err {
+		case services.ErrNotFound:
+			writeError(w, http.StatusNotFound, "Invitation not found")
+		case services.ErrOnlySender:
+			writeError(w, http.StatusForbidden, err.Error())
+		case services.ErrInvitationNotPending:
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to cancel invitation")
+		}
 		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch invitation")
-		return
-	}
-	if senderID != userID && !h.isAdmin(userID) {
-		writeError(w, http.StatusForbidden, "Only the sender can cancel")
-		return
-	}
-	if status != "pending" {
-		writeError(w, http.StatusConflict, "Invitation is no longer pending")
-		return
-	}
-
-	if _, err := h.DB.Exec("UPDATE invitations SET status = 'cancelled', updated_at = NOW() WHERE id = ?", invID); err != nil {
-		logErr("cancel invitation update", err)
-	}
-
-	// Nullify actions and mark as read on related notification
-	if _, err := h.DB.Exec(`
-		UPDATE notifications SET actions = NULL, body = 'invitation_cancelled', is_read = TRUE
-		WHERE type = 'invitation_received' AND user_id = ? AND JSON_EXTRACT(metadata, '$.invitation_id') = ?
-	`, receiverID, invID); err != nil {
-		logErr("nullify cancelled invitation notification", err)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Invitation cancelled"})

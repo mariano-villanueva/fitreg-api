@@ -3,16 +3,15 @@ package handlers
 import (
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/fitreg/api/middleware"
-	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/storage"
+	"github.com/fitreg/api/services"
 )
 
 const maxFileSize = 5 << 20 // 5MB
@@ -24,15 +23,13 @@ var allowedContentTypes = map[string]string{
 }
 
 type FileHandler struct {
-	DB      *sql.DB
-	Storage storage.Storage
+	svc *services.FileService
 }
 
-func NewFileHandler(db *sql.DB, store storage.Storage) *FileHandler {
-	return &FileHandler{DB: db, Storage: store}
+func NewFileHandler(svc *services.FileService) *FileHandler {
+	return &FileHandler{svc: svc}
 }
 
-// Upload handles POST /api/files
 func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {
@@ -65,45 +62,16 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	uuid := generateUUID()
-	storageKey := fmt.Sprintf("files/%s%s", uuid, ext)
+	storageKey := "files/" + uuid + ext
 
-	// Upload to storage
-	if err := h.Storage.Upload(r.Context(), storageKey, file, contentType); err != nil {
-		log.Printf("ERROR uploading file to storage: %v", err)
+	f, err := h.svc.Upload(r.Context(), uuid, storageKey, file, contentType, header.Filename, header.Size, userID)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to upload file")
 		return
 	}
-
-	// Insert DB record
-	result, err := h.DB.Exec(
-		"INSERT INTO files (uuid, user_id, original_name, content_type, size_bytes, storage_key) VALUES (?, ?, ?, ?, ?, ?)",
-		uuid, userID, header.Filename, contentType, header.Size, storageKey,
-	)
-	if err != nil {
-		log.Printf("ERROR inserting file record: %v", err)
-		// Best-effort rollback: delete from storage
-		if delErr := h.Storage.Delete(r.Context(), storageKey); delErr != nil {
-			log.Printf("ERROR rolling back storage upload: %v", delErr)
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to save file record")
-		return
-	}
-
-	id, _ := result.LastInsertId()
-	f := models.File{
-		ID:           id,
-		UUID:         uuid,
-		OriginalName: header.Filename,
-		ContentType:  contentType,
-		SizeBytes:    header.Size,
-		URL:          fmt.Sprintf("/api/files/%s/download", uuid),
-		CreatedAt:    time.Now(),
-	}
-
 	writeJSON(w, http.StatusCreated, f)
 }
 
-// Download handles GET /api/files/{uuid}/download
 func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {
@@ -111,7 +79,6 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract UUID from path: /api/files/{uuid}/download
 	path := strings.TrimPrefix(r.URL.Path, "/api/files/")
 	uuid := strings.TrimSuffix(path, "/download")
 	if uuid == "" || uuid == path {
@@ -119,30 +86,18 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var f models.File
-	err := h.DB.QueryRow(
-		"SELECT id, uuid, content_type, storage_key, original_name FROM files WHERE uuid = ?",
-		uuid,
-	).Scan(&f.ID, &f.UUID, &f.ContentType, &f.StorageKey, &f.OriginalName)
+	contentType, reader, err := h.svc.Download(r.Context(), uuid)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "File not found")
 		return
 	}
 	if err != nil {
-		log.Printf("ERROR fetching file record: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to fetch file")
-		return
-	}
-
-	reader, err := h.Storage.Download(r.Context(), f.StorageKey)
-	if err != nil {
-		log.Printf("ERROR downloading file from storage: %v", err)
 		writeError(w, http.StatusNotFound, "File not found in storage")
 		return
 	}
 	defer reader.Close()
 
-	w.Header().Set("Content-Type", f.ContentType)
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", "inline")
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	if _, err := io.Copy(w, reader); err != nil {
@@ -150,7 +105,6 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Delete handles DELETE /api/files/{uuid}
 func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {
@@ -158,51 +112,29 @@ func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract UUID from path: /api/files/{uuid}
 	uuid := strings.TrimPrefix(r.URL.Path, "/api/files/")
 	if uuid == "" {
 		writeError(w, http.StatusBadRequest, "Invalid file UUID")
 		return
 	}
 
-	var fileUserID int64
-	var storageKey string
-	err := h.DB.QueryRow(
-		"SELECT user_id, storage_key FROM files WHERE uuid = ?",
-		uuid,
-	).Scan(&fileUserID, &storageKey)
+	err := h.svc.Delete(r.Context(), uuid, userID)
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "File not found")
 		return
 	}
-	if err != nil {
-		log.Printf("ERROR fetching file for delete: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to fetch file")
-		return
-	}
-
-	if fileUserID != userID {
+	if errors.Is(err, services.ErrForbidden) {
 		writeError(w, http.StatusForbidden, "Not authorized to delete this file")
 		return
 	}
-
-	// Delete from storage first
-	if err := h.Storage.Delete(r.Context(), storageKey); err != nil {
-		log.Printf("ERROR deleting file from storage: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to delete file from storage")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to delete file")
 		return
 	}
-
-	// Then delete DB record
-	if _, err := h.DB.Exec("DELETE FROM files WHERE uuid = ?", uuid); err != nil {
-		log.Printf("ERROR deleting file record: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to delete file record")
-		return
-	}
-
 	writeJSON(w, http.StatusOK, map[string]string{"message": "file deleted"})
 }
 
+// generateUUID generates a random UUID v4 string.
 func generateUUID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
