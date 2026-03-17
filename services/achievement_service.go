@@ -37,11 +37,11 @@ func (s *AchievementService) ListMy(coachID int64) ([]models.CoachAchievement, e
 
 func (s *AchievementService) Create(coachID int64, req models.CreateAchievementRequest) (int64, error) {
 	isCoach, err := s.repo.IsCoach(coachID)
-	if err != nil || !isCoach {
-		return 0, ErrNotCoach
+	if err != nil {
+		return 0, err
 	}
-	if req.EventName == "" || req.EventDate == "" {
-		return 0, errors.New("event_name and event_date are required")
+	if !isCoach {
+		return 0, ErrNotCoach
 	}
 	id, err := s.repo.Create(coachID, req)
 	if err != nil {
@@ -73,14 +73,18 @@ func (s *AchievementService) Update(achID, coachID int64, req models.UpdateAchie
 }
 
 func (s *AchievementService) Delete(achID, coachID int64) error {
-	found, err := s.repo.Delete(achID, coachID)
+	isVerified, rejectionReason, err := s.repo.GetForEdit(achID, coachID)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
-	if !found {
-		return ErrNotFound
+	if isVerified || rejectionReason == "" {
+		return ErrAchievementNotRejected
 	}
-	return nil
+	_, err = s.repo.Delete(achID, coachID)
+	return err
 }
 
 func (s *AchievementService) SetVisibility(achID, coachID int64, isPublic bool) error {

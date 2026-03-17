@@ -86,7 +86,7 @@ func (r *achievementRepository) Update(achID, coachID int64, req models.UpdateAc
 
 func (r *achievementRepository) Delete(achID, coachID int64) (bool, error) {
 	result, err := r.db.Exec(
-		"DELETE FROM coach_achievements WHERE id = ? AND coach_id = ? AND rejection_reason IS NOT NULL",
+		"DELETE FROM coach_achievements WHERE id = ? AND coach_id = ?",
 		achID, coachID,
 	)
 	if err != nil {

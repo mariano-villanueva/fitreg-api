@@ -43,13 +43,17 @@ func (h *AchievementHandler) CreateAchievement(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
+	if req.EventName == "" || req.EventDate == "" {
+		writeError(w, http.StatusBadRequest, "event_name and event_date are required")
+		return
+	}
 	id, err := h.svc.Create(userID, req)
 	if err != nil {
 		switch err {
 		case services.ErrNotCoach:
 			writeError(w, http.StatusForbidden, "User is not a coach")
 		default:
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeError(w, http.StatusInternalServerError, "Failed to create achievement")
 		}
 		return
 	}
