@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log"
 
@@ -49,8 +48,6 @@ func (s *FileService) Download(ctx context.Context, uuid string) (string, io.Rea
 	}
 	return f.ContentType, reader, nil
 }
-
-var ErrForbidden = errors.New("forbidden")
 
 func (s *FileService) Delete(ctx context.Context, uuid string, userID int64) error {
 	ownerID, storageKey, err := s.repo.GetOwnerAndKey(uuid)

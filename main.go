@@ -43,6 +43,10 @@ func main() {
 			// Rating domain
 			repository.NewRatingRepository,
 			services.NewRatingService,
+			// Notification domain
+			repository.NewNotificationRepository,
+			repository.NewInvitationRepository,
+			services.NewNotificationService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,

@@ -39,6 +39,7 @@ type UserRepository interface {
 	GetAdminIDs() ([]int64, error)
 	UploadAvatar(id int64, image string) error
 	DeleteAvatar(id int64) error
+	ApproveAsCoach(id int64) error
 }
 
 // TemplateRepository handles all template-related database operations.
@@ -72,4 +73,29 @@ type RatingRepository interface {
 	IsStudentOf(coachID, studentID int64) (bool, error)
 	Upsert(coachID, studentID int64, rating int, comment string) error
 	List(coachID int64) ([]models.CoachRating, error)
+}
+
+// NotificationRepository handles all notification-related database operations.
+type NotificationRepository interface {
+	// Create inserts a notification after checking preferences for configurable types.
+	Create(userID int64, notifType, title, body string, metadata interface{}, actions []models.NotificationAction) error
+	List(userID int64, limit, offset int) ([]models.Notification, error)
+	UnreadCount(userID int64) (int, error)
+	MarkRead(notifID, userID int64) (bool, error)
+	MarkAllRead(userID int64) error
+	GetByID(notifID, userID int64) (models.Notification, error)
+	ClearActions(notifID int64) error
+	ClearActionsByInvitation(userID, invID int64) error
+	ClearCancelledInvitation(receiverID, invID int64) error
+	ClearCoachRequestActions(requesterID int64) error
+	GetPreferences(userID int64) (models.NotificationPreferences, error)
+	UpsertPreferences(userID int64, req models.UpdateNotificationPreferencesRequest) error
+}
+
+// InvitationRepository handles invitation-related database operations.
+// Extended in Task 2 with full CRUD; this defines only what NotificationService needs.
+type InvitationRepository interface {
+	GetStatus(id int64) (status string, err error)
+	AcceptTx(invitationID, userID int64) (coachID, studentID, senderID int64, err error)
+	Reject(invitationID int64) (senderID int64, err error)
 }

@@ -349,12 +349,12 @@ func (h *InvitationHandler) RespondInvitation(w http.ResponseWriter, r *http.Req
 	}
 
 	if req.Action == "accepted" {
-		if err := h.Notification.acceptInvitation(invID, userID); err != nil {
+		if err := h.Notification.AcceptInvitation(invID, userID); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 	} else {
-		h.Notification.rejectInvitation(invID, userID)
+		h.Notification.RejectInvitation(invID, userID)
 	}
 
 	// Nullify actions on related notification

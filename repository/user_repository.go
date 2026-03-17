@@ -149,3 +149,8 @@ func (r *userRepository) DeleteAvatar(id int64) error {
 	_, err := r.db.Exec("UPDATE users SET custom_avatar = NULL, updated_at = NOW() WHERE id = ?", id)
 	return err
 }
+
+func (r *userRepository) ApproveAsCoach(id int64) error {
+	_, err := r.db.Exec("UPDATE users SET is_coach = TRUE, coach_public = TRUE, updated_at = NOW() WHERE id = ?", id)
+	return err
+}
