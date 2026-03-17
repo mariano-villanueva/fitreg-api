@@ -112,3 +112,17 @@ type InvitationRepository interface {
 	Cancel(invID int64) error
 	IsAdmin(userID int64) (bool, error)
 }
+
+// AchievementRepository handles all coach achievement database operations.
+type AchievementRepository interface {
+	List(coachID int64) ([]models.CoachAchievement, error)
+	Create(coachID int64, req models.CreateAchievementRequest) (int64, error)
+	GetForEdit(achID, coachID int64) (isVerified bool, rejectionReason string, err error)
+	Update(achID, coachID int64, req models.UpdateAchievementRequest) error
+	Delete(achID, coachID int64) (bool, error)
+	SetVisibility(achID, coachID int64, isPublic bool) (bool, error)
+	IsCoach(userID int64) (bool, error)
+	GetAdminIDs() ([]int64, error)
+	// GetFileUUID resolves an image_file_id to its download UUID.
+	GetFileUUID(fileID int64) (string, error)
+}

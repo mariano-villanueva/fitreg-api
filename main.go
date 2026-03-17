@@ -48,6 +48,9 @@ func main() {
 			repository.NewInvitationRepository,
 			services.NewNotificationService,
 			services.NewInvitationService,
+			// Achievement domain (Task 3)
+			repository.NewAchievementRepository,
+			services.NewAchievementService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,
