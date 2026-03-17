@@ -13,7 +13,9 @@ import (
 	"github.com/fitreg/api/middleware"
 	dbprovider "github.com/fitreg/api/providers/db"
 	"github.com/fitreg/api/providers/storage"
+	"github.com/fitreg/api/repository"
 	"github.com/fitreg/api/router"
+	"github.com/fitreg/api/services"
 )
 
 func main() {
@@ -22,9 +24,12 @@ func main() {
 			config.Load,
 			dbprovider.New,
 			storage.New,
+			// Workout domain
+			repository.NewWorkoutRepository,
+			services.NewWorkoutService,
+			handlers.NewWorkoutHandler,
 			// Handlers (no dependencies on other handlers)
 			handlers.NewAuthHandler,
-			handlers.NewWorkoutHandler,
 			handlers.NewCoachProfileHandler,
 			handlers.NewRatingHandler,
 			handlers.NewTemplateHandler,
