@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
@@ -20,23 +18,6 @@ type WeeklyTemplateHandler struct {
 // NewWeeklyTemplateHandler creates a new WeeklyTemplateHandler.
 func NewWeeklyTemplateHandler(svc *services.WeeklyTemplateService) *WeeklyTemplateHandler {
 	return &WeeklyTemplateHandler{svc: svc}
-}
-
-// weeklyTemplateIDFromPath extracts the numeric ID from paths like:
-//
-//	/api/coach/weekly-templates/42
-//	/api/coach/weekly-templates/42/days
-//	/api/coach/weekly-templates/42/assign
-func weeklyTemplateIDFromPath(r *http.Request) (int64, string) {
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/coach/weekly-templates/"), "/")
-	if len(parts) == 0 || parts[0] == "" {
-		return 0, "missing id"
-	}
-	id, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return 0, "invalid id"
-	}
-	return id, ""
 }
 
 // List handles GET /api/coach/weekly-templates
@@ -76,7 +57,7 @@ func (h *WeeklyTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusInternalServerError, "Failed to create weekly template")
 		return
 	}
 	writeJSON(w, http.StatusCreated, tmpl)
@@ -89,9 +70,9 @@ func (h *WeeklyTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-	id, errMsg := weeklyTemplateIDFromPath(r)
-	if errMsg != "" {
-		writeError(w, http.StatusBadRequest, errMsg)
+	id, err := extractID(r.URL.Path, "/api/coach/weekly-templates/")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid weekly template ID")
 		return
 	}
 	tmpl, err := h.svc.Get(id, userID)
@@ -113,9 +94,9 @@ func (h *WeeklyTemplateHandler) UpdateMeta(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-	id, errMsg := weeklyTemplateIDFromPath(r)
-	if errMsg != "" {
-		writeError(w, http.StatusBadRequest, errMsg)
+	id, err := extractID(r.URL.Path, "/api/coach/weekly-templates/")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid weekly template ID")
 		return
 	}
 	var req models.UpdateWeeklyTemplateRequest
@@ -129,7 +110,7 @@ func (h *WeeklyTemplateHandler) UpdateMeta(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusInternalServerError, "Failed to update weekly template")
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -142,12 +123,12 @@ func (h *WeeklyTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-	id, errMsg := weeklyTemplateIDFromPath(r)
-	if errMsg != "" {
-		writeError(w, http.StatusBadRequest, errMsg)
+	id, err := extractID(r.URL.Path, "/api/coach/weekly-templates/")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid weekly template ID")
 		return
 	}
-	err := h.svc.Delete(id, userID)
+	err = h.svc.Delete(id, userID)
 	if errors.Is(err, services.ErrWeeklyTemplateNotFound) {
 		writeError(w, http.StatusNotFound, "Weekly template not found")
 		return
@@ -166,9 +147,9 @@ func (h *WeeklyTemplateHandler) PutDays(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-	id, errMsg := weeklyTemplateIDFromPath(r)
-	if errMsg != "" {
-		writeError(w, http.StatusBadRequest, errMsg)
+	id, err := extractID(r.URL.Path, "/api/coach/weekly-templates/")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid weekly template ID")
 		return
 	}
 	var req models.PutDaysRequest
@@ -185,7 +166,7 @@ func (h *WeeklyTemplateHandler) PutDays(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusInternalServerError, "Failed to update days")
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -198,9 +179,9 @@ func (h *WeeklyTemplateHandler) Assign(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-	id, errMsg := weeklyTemplateIDFromPath(r)
-	if errMsg != "" {
-		writeError(w, http.StatusBadRequest, errMsg)
+	id, err := extractID(r.URL.Path, "/api/coach/weekly-templates/")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid weekly template ID")
 		return
 	}
 	var req models.AssignWeeklyTemplateRequest
