@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 
 	"github.com/fitreg/api/models"
 )
@@ -173,5 +174,14 @@ func truncateDate(s string) string {
 	if len(s) >= 10 {
 		return s[:10]
 	}
+	return s
+}
+
+// escapeLike escapes LIKE wildcard characters (%, _, \) in user-supplied
+// search terms so they are treated as literals, not SQL wildcards.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
 	return s
 }

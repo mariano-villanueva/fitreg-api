@@ -20,6 +20,10 @@ type FileRepository interface {
 	GetByUUID(uuid string) (models.File, error)
 	GetOwnerAndKey(uuid string) (userID int64, storageKey string, err error)
 	Delete(uuid string) error
+	// CanAccess returns true if userID is allowed to download the file identified by uuid.
+	// Access is granted to: the file owner, admins, coaches of the associated assigned workout,
+	// and any authenticated user for publicly visible achievement images.
+	CanAccess(uuid string, userID int64) (bool, error)
 }
 
 // UserRepository handles all user-related database operations.

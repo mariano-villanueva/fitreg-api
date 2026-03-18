@@ -51,7 +51,13 @@ func (h *CoachProfileHandler) UpdateCoachProfile(w http.ResponseWriter, r *http.
 // ListCoaches handles GET /api/coaches
 func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
+	if len(search) > 100 {
+		search = search[:100]
+	}
 	locality := r.URL.Query().Get("locality")
+	if len(locality) > 100 {
+		locality = locality[:100]
+	}
 	level := r.URL.Query().Get("level")
 	sortBy := r.URL.Query().Get("sort")
 

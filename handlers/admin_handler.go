@@ -37,6 +37,9 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	// Parse query params
 	search := r.URL.Query().Get("search")
+	if len(search) > 100 {
+		search = search[:100]
+	}
 	role := r.URL.Query().Get("role")
 	sortCol := r.URL.Query().Get("sort")
 	sortOrder := r.URL.Query().Get("order")

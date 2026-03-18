@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -162,7 +163,7 @@ func (h *UserHandler) GetCoachRequestStatus(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
-const maxAvatarSize = 500 * 1024 // 500KB base64
+const maxAvatarDecodedSize = 500 * 1024 // 500KB of actual image binary data
 
 func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
@@ -189,7 +190,20 @@ func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Image) > maxAvatarSize {
+	// Validate decoded binary size, not the base64 string length.
+	// Base64 inflates data by ~33%, so checking the string length would allow
+	// up to ~375KB of actual image data when intending to limit to 500KB.
+	commaIdx := strings.Index(req.Image, ",")
+	if commaIdx < 0 {
+		writeError(w, http.StatusBadRequest, "invalid image data URI")
+		return
+	}
+	decoded, err := base64.StdEncoding.DecodeString(req.Image[commaIdx+1:])
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid base64 encoding")
+		return
+	}
+	if len(decoded) > maxAvatarDecodedSize {
 		writeError(w, http.StatusBadRequest, "image too large (max 500KB)")
 		return
 	}

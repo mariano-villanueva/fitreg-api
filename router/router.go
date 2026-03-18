@@ -6,6 +6,7 @@ import (
 
 	"github.com/fitreg/api/config"
 	"github.com/fitreg/api/handlers"
+	"github.com/fitreg/api/middleware"
 )
 
 func New(
@@ -26,14 +27,14 @@ func New(
 ) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Auth routes (public)
-	mux.HandleFunc("/api/auth/google", func(w http.ResponseWriter, r *http.Request) {
+	// Auth routes (public, rate-limited: 10 req/IP/min)
+	mux.Handle("/api/auth/google", middleware.RateLimitAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.GoogleLogin(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
-	})
+	})))
 
 	// User profile routes
 	mux.HandleFunc("/api/me", func(w http.ResponseWriter, r *http.Request) {
@@ -98,12 +99,9 @@ func New(
 
 	// Coach student routes
 	mux.HandleFunc("/api/coach/students", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
+		if r.Method == http.MethodGet {
 			coach.ListStudents(w, r)
-		case http.MethodPost:
-			coach.AddStudent(w, r)
-		default:
+		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
 	})

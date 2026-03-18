@@ -36,7 +36,14 @@ func (s *FileService) Upload(ctx context.Context, uuid, storageKey string, file 
 	return f, nil
 }
 
-func (s *FileService) Download(ctx context.Context, uuid string) (string, io.ReadCloser, error) {
+func (s *FileService) Download(ctx context.Context, uuid string, userID int64) (string, io.ReadCloser, error) {
+	allowed, err := s.repo.CanAccess(uuid, userID)
+	if err != nil {
+		return "", nil, err
+	}
+	if !allowed {
+		return "", nil, ErrForbidden
+	}
 	f, err := s.repo.GetByUUID(uuid)
 	if err != nil {
 		return "", nil, err

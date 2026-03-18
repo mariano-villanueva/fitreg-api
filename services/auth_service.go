@@ -91,7 +91,9 @@ func (s *AuthService) verifyGoogleToken(idToken string) (*GoogleTokenInfo, error
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token verification failed: %s", string(body))
+		// Log the full Google response for server-side debugging, but never send it to the client.
+		log.Printf("Google token verification failed (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("token verification failed")
 	}
 
 	var tokenInfo GoogleTokenInfo

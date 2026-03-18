@@ -3,10 +3,15 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 
 	"github.com/fitreg/api/models"
 )
+
+// ErrStatusConflict is returned when an assigned workout cannot be transitioned
+// because it is already in a terminal state (completed or skipped).
+var ErrStatusConflict = errors.New("workout already finalized")
 
 type coachRepository struct {
 	db *sql.DB
@@ -316,13 +321,16 @@ func (r *coachRepository) UpdateAssignedWorkout(awID, coachID int64, req models.
 		log.Printf("marshal expected fields for update: %v", err)
 	}
 
-	_, err = r.db.Exec(`
+	result, err := r.db.Exec(`
 		UPDATE assigned_workouts
 		SET title = ?, description = ?, type = ?, distance_km = ?, duration_seconds = ?, notes = ?, expected_fields = ?, due_date = ?, updated_at = NOW()
 		WHERE id = ? AND coach_id = ?
 	`, req.Title, req.Description, req.Type, req.DistanceKm, req.DurationSeconds, req.Notes, efJSON, dueDateVal, awID, coachID)
 	if err != nil {
 		return models.AssignedWorkout{}, err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return models.AssignedWorkout{}, sql.ErrNoRows
 	}
 
 	// Replace segments: delete old, insert new
@@ -465,10 +473,13 @@ func (r *coachRepository) GetMyAssignedWorkouts(studentID int64, startDate, endD
 }
 
 func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) (coachID int64, workoutTitle string, err error) {
+	// Only allow transitioning from 'pending' — this enforces the state machine
+	// atomically and prevents race conditions with concurrent completion requests.
 	result, err := r.db.Exec(`
 		UPDATE assigned_workouts SET status = ?,
 			result_time_seconds = ?, result_distance_km = ?, result_heart_rate = ?, result_feeling = ?,
-			image_file_id = ?, updated_at = NOW() WHERE id = ? AND student_id = ?
+			image_file_id = ?, updated_at = NOW()
+		WHERE id = ? AND student_id = ? AND status = 'pending'
 	`, req.Status, req.ResultTimeSeconds, req.ResultDistanceKm, req.ResultHeartRate, req.ResultFeeling, req.ImageFileID, awID, studentID)
 	if err != nil {
 		return 0, "", err
@@ -479,7 +490,15 @@ func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req
 		log.Printf("get rows affected for update status: %v", err)
 	}
 	if rowsAffected == 0 {
-		return 0, "", sql.ErrNoRows
+		// Distinguish: does the record exist at all, or is it already in a terminal state?
+		var exists int
+		checkErr := r.db.QueryRow(
+			"SELECT 1 FROM assigned_workouts WHERE id = ? AND student_id = ?", awID, studentID,
+		).Scan(&exists)
+		if checkErr == sql.ErrNoRows {
+			return 0, "", sql.ErrNoRows
+		}
+		return 0, "", ErrStatusConflict
 	}
 
 	// If completed, create a workout record for the athlete
@@ -509,22 +528,23 @@ func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req
 			avgHR = *req.ResultHeartRate
 		}
 
-		workoutDate := "CURDATE()"
-		dateArg := interface{}(nil)
-		if aw.DueDate.Valid {
-			workoutDate = "?"
-			dateArg = truncateDate(aw.DueDate.String)
-		}
-
 		var notes interface{}
 		if aw.Notes.Valid {
 			notes = aw.Notes.String
 		}
 
-		if _, err := r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
-			VALUES (?, `+workoutDate+`, ?, ?, ?, ?, ?, NOW(), NOW())`,
-			studentID, dateArg, finalDistance, finalDuration, avgHR, aw.Type, notes); err != nil {
-			log.Printf("insert workout from completed assignment: %v", err)
+		var insertErr error
+		if aw.DueDate.Valid {
+			_, insertErr = r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+				studentID, truncateDate(aw.DueDate.String), finalDistance, finalDuration, avgHR, aw.Type, notes)
+		} else {
+			_, insertErr = r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
+				VALUES (?, CURDATE(), ?, ?, ?, ?, ?, NOW(), NOW())`,
+				studentID, finalDistance, finalDuration, avgHR, aw.Type, notes)
+		}
+		if insertErr != nil {
+			log.Printf("insert workout from completed assignment: %v", insertErr)
 		}
 	}
 

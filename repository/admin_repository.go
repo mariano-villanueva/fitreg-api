@@ -61,7 +61,7 @@ func (r *adminRepository) ListUsers(search, role, sortCol, sortOrder string, lim
 
 	if search != "" {
 		where += " AND (name LIKE ? OR email LIKE ?)"
-		pattern := "%" + search + "%"
+		pattern := "%" + escapeLike(search) + "%"
 		args = append(args, pattern, pattern)
 	}
 

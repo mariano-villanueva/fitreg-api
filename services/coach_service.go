@@ -8,6 +8,7 @@ import (
 	"github.com/fitreg/api/repository"
 )
 
+
 type CoachService struct {
 	repo     repository.CoachRepository
 	notifSvc *NotificationService
@@ -153,6 +154,9 @@ func (s *CoachService) UpdateAssignedWorkoutStatus(awID, studentID int64, req mo
 	coachID, workoutTitle, err := s.repo.UpdateAssignedWorkoutStatus(awID, studentID, req)
 	if err == sql.ErrNoRows {
 		return ErrNotFound
+	}
+	if errors.Is(err, repository.ErrStatusConflict) {
+		return ErrWorkoutFinished
 	}
 	if err != nil {
 		return err

@@ -42,11 +42,6 @@ func (h *CoachHandler) ListStudents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, students)
 }
 
-// AddStudent is deprecated - use POST /api/invitations instead
-func (h *CoachHandler) AddStudent(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusGone, "Use POST /api/invitations to invite students")
-}
-
 // EndRelationship handles PUT /api/coach-students/{id}/end
 func (h *CoachHandler) EndRelationship(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
@@ -126,10 +121,14 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 	startDate := r.URL.Query().Get("start_date")
 	endDate := r.URL.Query().Get("end_date")
 
+	const maxPageLimit = 100
 	limit := 0
 	offset := 0
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			if l > maxPageLimit {
+				l = maxPageLimit
+			}
 			limit = l
 		}
 	}
@@ -343,12 +342,29 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 		return
 	}
 
+	// Sanity bounds on optional numeric result fields to prevent garbage data.
+	if req.ResultDistanceKm != nil && (*req.ResultDistanceKm < 0 || *req.ResultDistanceKm > 1000) {
+		writeError(w, http.StatusBadRequest, "result_distance_km must be between 0 and 1000")
+		return
+	}
+	if req.ResultTimeSeconds != nil && (*req.ResultTimeSeconds < 0 || *req.ResultTimeSeconds > 86400*7) {
+		writeError(w, http.StatusBadRequest, "result_time_seconds must be between 0 and 604800")
+		return
+	}
+	if req.ResultHeartRate != nil && (*req.ResultHeartRate < 0 || *req.ResultHeartRate > 300) {
+		writeError(w, http.StatusBadRequest, "result_heart_rate must be between 0 and 300")
+		return
+	}
+
 	if err := h.svc.UpdateAssignedWorkoutStatus(awID, userID, req); err != nil {
-		if errors.Is(err, services.ErrNotFound) {
+		switch {
+		case errors.Is(err, services.ErrNotFound):
 			writeError(w, http.StatusNotFound, "Assigned workout not found")
-			return
+		case errors.Is(err, services.ErrWorkoutFinished):
+			writeError(w, http.StatusConflict, "Workout is already completed or skipped")
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to update status")
 		}
-		writeError(w, http.StatusInternalServerError, "Failed to update status")
 		return
 	}
 

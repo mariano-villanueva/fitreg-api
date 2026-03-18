@@ -78,7 +78,6 @@ type UserRow struct {
 // UserProfile is the API response shape for user profile data.
 type UserProfile struct {
 	ID                  int64     `json:"id"`
-	GoogleID            string    `json:"google_id"`
 	Email               string    `json:"email"`
 	Name                string    `json:"name"`
 	AvatarURL           string    `json:"avatar_url"`

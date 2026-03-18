@@ -34,11 +34,12 @@ func (r *coachProfileRepository) ListCoaches(search, locality, level, sortBy str
 
 	if search != "" {
 		where += " AND (u.name LIKE ? OR u.coach_description LIKE ? OR u.coach_locality LIKE ?)"
-		args = append(args, "%"+search+"%", "%"+search+"%", "%"+search+"%")
+		pattern := "%" + escapeLike(search) + "%"
+		args = append(args, pattern, pattern, pattern)
 	}
 	if locality != "" {
 		where += " AND u.coach_locality LIKE ?"
-		args = append(args, "%"+locality+"%")
+		args = append(args, "%"+escapeLike(locality)+"%")
 	}
 	if level != "" {
 		where += " AND FIND_IN_SET(?, u.coach_level) > 0"

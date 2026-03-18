@@ -9,7 +9,6 @@ import (
 func rowToUserProfile(row models.UserRow) models.UserProfile {
 	u := models.UserProfile{
 		ID:        row.ID,
-		GoogleID:  row.GoogleID,
 		Email:     row.Email,
 		Name:      row.Name,
 		Language:  "es",

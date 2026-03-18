@@ -19,12 +19,6 @@ func NewNotificationHandler(svc *services.NotificationService) *NotificationHand
 	return &NotificationHandler{svc: svc}
 }
 
-// CreateNotification is a helper called by other handlers to emit notifications.
-// Delegates to the service which checks notification preferences.
-func (h *NotificationHandler) CreateNotification(userID int64, notifType, title, body string, metadata interface{}, actions []models.NotificationAction) error {
-	return h.svc.Create(userID, notifType, title, body, metadata, actions)
-}
-
 func (h *NotificationHandler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {

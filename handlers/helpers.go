@@ -14,9 +14,3 @@ func extractID(path, prefix string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
-func truncateDate(s string) string {
-	if len(s) >= 10 {
-		return s[:10]
-	}
-	return s
-}
