@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 
@@ -43,12 +42,8 @@ func (h *TemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tmpl, err := h.svc.Create(userID, req)
-	if err == services.ErrNotCoach {
-		writeError(w, http.StatusForbidden, "User is not a coach")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to create template")
+		handleServiceErr(w, err, "TemplateHandler.Create", "Failed to create template")
 		return
 	}
 
@@ -64,12 +59,8 @@ func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	templates, err := h.svc.List(userID)
-	if err == services.ErrNotCoach {
-		writeError(w, http.StatusForbidden, "User is not a coach")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch templates")
+		handleServiceErr(w, err, "TemplateHandler.List", "Failed to fetch templates")
 		return
 	}
 
@@ -91,12 +82,8 @@ func (h *TemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tmpl, err := h.svc.Get(id, userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Template not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch template")
+		handleServiceErr(w, err, "TemplateHandler.Get", "Failed to fetch template")
 		return
 	}
 
@@ -134,12 +121,8 @@ func (h *TemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tmpl, err := h.svc.Update(id, userID, req)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Template not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to update template")
+		handleServiceErr(w, err, "TemplateHandler.Update", "Failed to update template")
 		return
 	}
 
@@ -161,12 +144,8 @@ func (h *TemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = h.svc.Delete(id, userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Template not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to delete template")
+		handleServiceErr(w, err, "TemplateHandler.Delete", "Failed to delete template")
 		return
 	}
 

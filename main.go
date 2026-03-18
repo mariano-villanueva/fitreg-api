@@ -19,6 +19,8 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
 	fx.New(
 		fx.Provide(
 			config.Load,

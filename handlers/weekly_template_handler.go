@@ -28,12 +28,8 @@ func (h *WeeklyTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	templates, err := h.svc.List(userID)
-	if errors.Is(err, services.ErrNotCoach) {
-		writeError(w, http.StatusForbidden, "User is not a coach")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch weekly templates")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.List", "Failed to fetch weekly templates")
 		return
 	}
 	writeJSON(w, http.StatusOK, templates)
@@ -52,12 +48,8 @@ func (h *WeeklyTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmpl, err := h.svc.Create(userID, req)
-	if errors.Is(err, services.ErrNotCoach) {
-		writeError(w, http.StatusForbidden, "User is not a coach")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to create weekly template")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.Create", "Failed to create weekly template")
 		return
 	}
 	writeJSON(w, http.StatusCreated, tmpl)
@@ -76,12 +68,8 @@ func (h *WeeklyTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmpl, err := h.svc.Get(id, userID)
-	if errors.Is(err, services.ErrWeeklyTemplateNotFound) {
-		writeError(w, http.StatusNotFound, "Weekly template not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch weekly template")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.Get", "Failed to fetch weekly template")
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -105,12 +93,8 @@ func (h *WeeklyTemplateHandler) UpdateMeta(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	tmpl, err := h.svc.UpdateMeta(id, userID, req)
-	if errors.Is(err, services.ErrWeeklyTemplateNotFound) {
-		writeError(w, http.StatusNotFound, "Weekly template not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to update weekly template")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.UpdateMeta", "Failed to update weekly template")
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -129,12 +113,8 @@ func (h *WeeklyTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = h.svc.Delete(id, userID)
-	if errors.Is(err, services.ErrWeeklyTemplateNotFound) {
-		writeError(w, http.StatusNotFound, "Weekly template not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to delete weekly template")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.Delete", "Failed to delete weekly template")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -161,12 +141,8 @@ func (h *WeeklyTemplateHandler) PutDays(w http.ResponseWriter, r *http.Request) 
 		req.Days = []models.WeeklyTemplateDayRequest{}
 	}
 	tmpl, err := h.svc.PutDays(id, userID, req)
-	if errors.Is(err, services.ErrWeeklyTemplateNotFound) {
-		writeError(w, http.StatusNotFound, "Weekly template not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to update days")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.PutDays", "Failed to update days")
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -199,14 +175,6 @@ func (h *WeeklyTemplateHandler) Assign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.svc.Assign(id, userID, req)
-	if errors.Is(err, services.ErrWeeklyTemplateNotFound) {
-		writeError(w, http.StatusNotFound, "Weekly template not found")
-		return
-	}
-	if errors.Is(err, services.ErrForbidden) {
-		writeError(w, http.StatusForbidden, "Student is not in your roster")
-		return
-	}
 	// Conflict error: extract dates and return 409.
 	var conflictErr *services.ConflictError
 	if errors.As(err, &conflictErr) {
@@ -217,7 +185,7 @@ func (h *WeeklyTemplateHandler) Assign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		handleServiceErr(w, err, "WeeklyTemplateHandler.Assign", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, resp)

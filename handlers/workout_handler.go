@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 
@@ -26,7 +25,7 @@ func (h *WorkoutHandler) ListWorkouts(w http.ResponseWriter, r *http.Request) {
 	}
 	workouts, err := h.svc.List(userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch workouts")
+		handleServiceErr(w, err, "WorkoutHandler.ListWorkouts", "Failed to fetch workouts")
 		return
 	}
 	writeJSON(w, http.StatusOK, workouts)
@@ -44,12 +43,8 @@ func (h *WorkoutHandler) GetWorkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wo, err := h.svc.GetByID(id, userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Workout not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch workout")
+		handleServiceErr(w, err, "WorkoutHandler.GetWorkout", "Failed to fetch workout")
 		return
 	}
 	writeJSON(w, http.StatusOK, wo)
@@ -76,7 +71,7 @@ func (h *WorkoutHandler) CreateWorkout(w http.ResponseWriter, r *http.Request) {
 	}
 	wo, err := h.svc.Create(userID, req)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to create workout")
+		handleServiceErr(w, err, "WorkoutHandler.CreateWorkout", "Failed to create workout")
 		return
 	}
 	writeJSON(w, http.StatusCreated, wo)
@@ -103,12 +98,8 @@ func (h *WorkoutHandler) UpdateWorkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wo, err := h.svc.Update(id, userID, req)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Workout not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to update workout")
+		handleServiceErr(w, err, "WorkoutHandler.UpdateWorkout", "Failed to update workout")
 		return
 	}
 	writeJSON(w, http.StatusOK, wo)
@@ -126,12 +117,8 @@ func (h *WorkoutHandler) DeleteWorkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = h.svc.Delete(id, userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Workout not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to delete workout")
+		handleServiceErr(w, err, "WorkoutHandler.DeleteWorkout", "Failed to delete workout")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Workout deleted"})

@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -50,8 +50,7 @@ func (h *RatingHandler) UpsertRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("ERROR upserting rating: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to save rating")
+		writeAppError(w, apperr.New(http.StatusInternalServerError, "RatingHandler.UpsertRating", "Failed to save rating", err))
 		return
 	}
 
@@ -69,7 +68,7 @@ func (h *RatingHandler) GetRatings(w http.ResponseWriter, r *http.Request) {
 
 	ratings, err := h.svc.List(coachID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch ratings")
+		handleServiceErr(w, err, "RatingHandler.GetRatings", "Failed to fetch ratings")
 		return
 	}
 

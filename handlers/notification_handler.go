@@ -38,7 +38,7 @@ func (h *NotificationHandler) ListNotifications(w http.ResponseWriter, r *http.R
 
 	notifications, err := h.svc.List(userID, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch notifications")
+		handleServiceErr(w, err, "NotificationHandler.ListNotifications", "Failed to fetch notifications")
 		return
 	}
 
@@ -54,7 +54,7 @@ func (h *NotificationHandler) UnreadCount(w http.ResponseWriter, r *http.Request
 
 	count, err := h.svc.UnreadCount(userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to count notifications")
+		handleServiceErr(w, err, "NotificationHandler.UnreadCount", "Failed to count notifications")
 		return
 	}
 
@@ -77,7 +77,7 @@ func (h *NotificationHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 
 	found, err := h.svc.MarkRead(notifID, userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to mark notification as read")
+		handleServiceErr(w, err, "NotificationHandler.MarkRead", "Failed to mark notification as read")
 		return
 	}
 	if !found {
@@ -96,7 +96,7 @@ func (h *NotificationHandler) MarkAllRead(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.svc.MarkAllRead(userID); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to mark notifications as read")
+		handleServiceErr(w, err, "NotificationHandler.MarkAllRead", "Failed to mark notifications as read")
 		return
 	}
 
@@ -129,16 +129,7 @@ func (h *NotificationHandler) ExecuteAction(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	switch err {
-	case services.ErrNotFound:
-		writeError(w, http.StatusNotFound, "Notification not found")
-	case services.ErrInvitationNotPending:
-		writeError(w, http.StatusConflict, "Invitation is no longer pending")
-	case services.ErrStudentMaxCoaches:
-		writeError(w, http.StatusConflict, err.Error())
-	default:
-		writeError(w, http.StatusBadRequest, err.Error())
-	}
+	handleServiceErr(w, err, "NotificationHandler.ExecuteAction", err.Error())
 }
 
 func (h *NotificationHandler) GetPreferences(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +141,7 @@ func (h *NotificationHandler) GetPreferences(w http.ResponseWriter, r *http.Requ
 
 	prefs, err := h.svc.GetPreferences(userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch preferences")
+		handleServiceErr(w, err, "NotificationHandler.GetPreferences", "Failed to fetch preferences")
 		return
 	}
 
@@ -171,7 +162,7 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 	}
 
 	if err := h.svc.UpdatePreferences(userID, req); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to update preferences")
+		handleServiceErr(w, err, "NotificationHandler.UpdatePreferences", "Failed to update preferences")
 		return
 	}
 

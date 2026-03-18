@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,11 +30,7 @@ func (h *CoachHandler) ListStudents(w http.ResponseWriter, r *http.Request) {
 
 	students, err := h.svc.ListStudents(userID)
 	if err != nil {
-		if errors.Is(err, services.ErrNotCoach) {
-			writeError(w, http.StatusForbidden, "User is not a coach")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch students")
+		handleServiceErr(w, err, "CoachHandler.ListStudents", "Failed to fetch students")
 		return
 	}
 
@@ -58,16 +53,7 @@ func (h *CoachHandler) EndRelationship(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.EndRelationship(csID, userID); err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotFound):
-			writeError(w, http.StatusNotFound, "Relationship not found")
-		case errors.Is(err, services.ErrForbidden):
-			writeError(w, http.StatusForbidden, "Access denied")
-		case err.Error() == "relationship is not active":
-			writeError(w, http.StatusConflict, "Relationship is not active")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to end relationship")
-		}
+		handleServiceErr(w, err, "CoachHandler.EndRelationship", "Failed to end relationship")
 		return
 	}
 
@@ -91,11 +77,7 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 
 	workouts, err := h.svc.GetStudentWorkouts(userID, studentID)
 	if err != nil {
-		if errors.Is(err, services.ErrForbidden) {
-			writeError(w, http.StatusForbidden, "Student does not belong to this coach")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch workouts")
+		handleServiceErr(w, err, "CoachHandler.GetStudentWorkouts", "Failed to fetch workouts")
 		return
 	}
 
@@ -140,7 +122,7 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 
 	workouts, total, err := h.svc.ListAssignedWorkouts(userID, studentID, statusFilter, startDate, endDate, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workouts")
+		handleServiceErr(w, err, "CoachHandler.ListAssignedWorkouts", "Failed to fetch assigned workouts")
 		return
 	}
 
@@ -180,14 +162,7 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	aw, err := h.svc.CreateAssignedWorkout(userID, req)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotCoach):
-			writeError(w, http.StatusForbidden, "User is not a coach")
-		case errors.Is(err, services.ErrForbidden):
-			writeError(w, http.StatusForbidden, "Student does not belong to this coach")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to create assigned workout")
-		}
+		handleServiceErr(w, err, "CoachHandler.CreateAssignedWorkout", "Failed to create assigned workout")
 		return
 	}
 
@@ -210,11 +185,7 @@ func (h *CoachHandler) GetAssignedWorkout(w http.ResponseWriter, r *http.Request
 
 	aw, err := h.svc.GetAssignedWorkout(awID, userID)
 	if err != nil {
-		if errors.Is(err, services.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workout")
+		handleServiceErr(w, err, "CoachHandler.GetAssignedWorkout", "Failed to fetch assigned workout")
 		return
 	}
 
@@ -248,14 +219,7 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	aw, err := h.svc.UpdateAssignedWorkout(awID, userID, req)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotFound):
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		case errors.Is(err, services.ErrWorkoutFinished):
-			writeError(w, http.StatusBadRequest, "Cannot edit a finished workout")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to update assigned workout")
-		}
+		handleServiceErr(w, err, "CoachHandler.UpdateAssignedWorkout", "Failed to update assigned workout")
 		return
 	}
 
@@ -277,14 +241,7 @@ func (h *CoachHandler) DeleteAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.svc.DeleteAssignedWorkout(awID, userID); err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotFound):
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		case errors.Is(err, services.ErrWorkoutFinished):
-			writeError(w, http.StatusBadRequest, "Cannot delete a finished workout")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to delete assigned workout")
-		}
+		handleServiceErr(w, err, "CoachHandler.DeleteAssignedWorkout", "Failed to delete assigned workout")
 		return
 	}
 
@@ -304,7 +261,7 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 
 	workouts, err := h.svc.GetMyAssignedWorkouts(userID, startDate, endDate)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workouts")
+		handleServiceErr(w, err, "CoachHandler.GetMyAssignedWorkouts", "Failed to fetch assigned workouts")
 		return
 	}
 
@@ -357,14 +314,7 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 	}
 
 	if err := h.svc.UpdateAssignedWorkoutStatus(awID, userID, req); err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotFound):
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		case errors.Is(err, services.ErrWorkoutFinished):
-			writeError(w, http.StatusConflict, "Workout is already completed or skipped")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to update status")
-		}
+		handleServiceErr(w, err, "CoachHandler.UpdateAssignedWorkoutStatus", "Failed to update status")
 		return
 	}
 
@@ -390,11 +340,7 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.svc.GetDailySummary(userID, date)
 	if err != nil {
-		if errors.Is(err, services.ErrNotCoach) {
-			writeError(w, http.StatusForbidden, "User is not a coach")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch daily summary")
+		handleServiceErr(w, err, "CoachHandler.GetDailySummary", "Failed to fetch daily summary")
 		return
 	}
 

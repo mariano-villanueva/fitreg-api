@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -30,12 +30,8 @@ func (h *UserHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := h.svc.GetProfile(userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "User not found")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch user")
+		handleServiceErr(w, err, "UserHandler.GetProfile", "Failed to fetch user")
 		return
 	}
 
@@ -57,8 +53,7 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	u, err := h.svc.UpdateProfile(userID, req)
 	if err != nil {
-		log.Printf("ERROR UpdateProfile: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to update profile")
+		writeAppError(w, apperr.New(http.StatusInternalServerError, "UserHandler.UpdateProfile", "Failed to update profile", err))
 		return
 	}
 
@@ -115,7 +110,7 @@ func (h *UserHandler) RequestCoach(w http.ResponseWriter, r *http.Request) {
 
 	adminIDs, err := h.svc.GetAdminIDs()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch admins")
+		handleServiceErr(w, err, "UserHandler.RequestCoach", "Failed to fetch admins")
 		return
 	}
 
@@ -209,7 +204,7 @@ func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.UploadAvatar(userID, req.Image); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to save avatar")
+		handleServiceErr(w, err, "UserHandler.UploadAvatar", "Failed to save avatar")
 		return
 	}
 
@@ -224,7 +219,7 @@ func (h *UserHandler) DeleteAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.DeleteAvatar(userID); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to delete avatar")
+		handleServiceErr(w, err, "UserHandler.DeleteAvatar", "Failed to delete avatar")
 		return
 	}
 

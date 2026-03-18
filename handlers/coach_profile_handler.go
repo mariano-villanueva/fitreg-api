@@ -1,12 +1,11 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -35,13 +34,8 @@ func (h *CoachProfileHandler) UpdateCoachProfile(w http.ResponseWriter, r *http.
 	}
 
 	err := h.svc.UpdateProfile(userID, req)
-	if err == services.ErrNotCoach {
-		writeError(w, http.StatusForbidden, "User is not a coach")
-		return
-	}
 	if err != nil {
-		log.Printf("ERROR updating coach profile: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to update coach profile")
+		handleServiceErr(w, err, "CoachProfileHandler.UpdateCoachProfile", "Failed to update coach profile")
 		return
 	}
 
@@ -73,8 +67,7 @@ func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request
 
 	coaches, total, err := h.svc.ListCoaches(search, locality, level, sortBy, limit, offset)
 	if err != nil {
-		log.Printf("ERROR listing coaches: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to fetch coaches")
+		writeAppError(w, apperr.New(http.StatusInternalServerError, "CoachProfileHandler.ListCoaches", "Failed to fetch coaches", err))
 		return
 	}
 
@@ -95,13 +88,8 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 	userID := middleware.UserIDFromContext(r.Context())
 
 	profile, err := h.svc.GetCoachProfile(coachID, userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "Coach not found")
-		return
-	}
 	if err != nil {
-		log.Printf("ERROR fetching coach profile: %v", err)
-		writeError(w, http.StatusInternalServerError, "Failed to fetch coach profile")
+		handleServiceErr(w, err, "CoachProfileHandler.GetCoachProfile", "Failed to fetch coach profile")
 		return
 	}
 

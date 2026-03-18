@@ -34,24 +34,7 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 
 	inv, err := h.svc.Create(userID, req)
 	if err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "user_not_found")
-		case services.ErrCannotInviteSelf:
-			writeError(w, http.StatusBadRequest, "cannot_invite_self")
-		case services.ErrNotCoach:
-			writeError(w, http.StatusBadRequest, "not_a_coach")
-		case services.ErrReceiverNotCoach:
-			writeError(w, http.StatusBadRequest, "receiver_not_coach")
-		case services.ErrInvitationAlreadyPending:
-			writeError(w, http.StatusBadRequest, "invitation_already_pending")
-		case services.ErrAlreadyConnected:
-			writeError(w, http.StatusBadRequest, "already_connected")
-		case services.ErrStudentMaxCoaches:
-			writeError(w, http.StatusBadRequest, "student_max_coaches")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to create invitation")
-		}
+		handleServiceErr(w, err, "InvitationHandler.CreateInvitation", "Failed to create invitation")
 		return
 	}
 
@@ -79,7 +62,7 @@ func (h *InvitationHandler) ListInvitations(w http.ResponseWriter, r *http.Reque
 
 	invitations, err := h.svc.List(userID, status, direction, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch invitations")
+		handleServiceErr(w, err, "InvitationHandler.ListInvitations", "Failed to fetch invitations")
 		return
 	}
 
@@ -101,14 +84,7 @@ func (h *InvitationHandler) GetInvitation(w http.ResponseWriter, r *http.Request
 
 	inv, err := h.svc.GetByID(invID, userID)
 	if err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Invitation not found")
-		case services.ErrForbidden:
-			writeError(w, http.StatusForbidden, "Access denied")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to fetch invitation")
-		}
+		handleServiceErr(w, err, "InvitationHandler.GetInvitation", "Failed to fetch invitation")
 		return
 	}
 
@@ -136,18 +112,7 @@ func (h *InvitationHandler) RespondInvitation(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.svc.Respond(invID, userID, req.Action); err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Invitation not found")
-		case services.ErrOnlyReceiver:
-			writeError(w, http.StatusForbidden, err.Error())
-		case services.ErrInvitationNotPending:
-			writeError(w, http.StatusConflict, err.Error())
-		case services.ErrStudentMaxCoaches:
-			writeError(w, http.StatusBadRequest, err.Error())
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to respond to invitation")
-		}
+		handleServiceErr(w, err, "InvitationHandler.RespondInvitation", "Failed to respond to invitation")
 		return
 	}
 
@@ -168,16 +133,7 @@ func (h *InvitationHandler) CancelInvitation(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.svc.Cancel(invID, userID); err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Invitation not found")
-		case services.ErrOnlySender:
-			writeError(w, http.StatusForbidden, err.Error())
-		case services.ErrInvitationNotPending:
-			writeError(w, http.StatusConflict, err.Error())
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to cancel invitation")
-		}
+		handleServiceErr(w, err, "InvitationHandler.CancelInvitation", "Failed to cancel invitation")
 		return
 	}
 

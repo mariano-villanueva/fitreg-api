@@ -26,7 +26,7 @@ func (h *AchievementHandler) ListMyAchievements(w http.ResponseWriter, r *http.R
 	}
 	achievements, err := h.svc.ListMy(userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch achievements")
+		handleServiceErr(w, err, "AchievementHandler.ListMyAchievements", "Failed to fetch achievements")
 		return
 	}
 	writeJSON(w, http.StatusOK, achievements)
@@ -49,12 +49,7 @@ func (h *AchievementHandler) CreateAchievement(w http.ResponseWriter, r *http.Re
 	}
 	id, err := h.svc.Create(userID, req)
 	if err != nil {
-		switch err {
-		case services.ErrNotCoach:
-			writeError(w, http.StatusForbidden, "User is not a coach")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to create achievement")
-		}
+		handleServiceErr(w, err, "AchievementHandler.CreateAchievement", "Failed to create achievement")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "message": "Achievement created"})
@@ -77,16 +72,7 @@ func (h *AchievementHandler) UpdateAchievement(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := h.svc.Update(achID, userID, req); err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Achievement not found")
-		case services.ErrAchievementVerified:
-			writeError(w, http.StatusBadRequest, "Cannot edit a verified achievement")
-		case services.ErrAchievementNotRejected:
-			writeError(w, http.StatusBadRequest, "Only rejected achievements can be edited")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to update achievement")
-		}
+		handleServiceErr(w, err, "AchievementHandler.UpdateAchievement", "Failed to update achievement")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Achievement updated"})
@@ -104,12 +90,7 @@ func (h *AchievementHandler) DeleteAchievement(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := h.svc.Delete(achID, userID); err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Achievement not found or cannot be deleted")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to delete achievement")
-		}
+		handleServiceErr(w, err, "AchievementHandler.DeleteAchievement", "Failed to delete achievement")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Achievement deleted"})
@@ -135,12 +116,7 @@ func (h *AchievementHandler) ToggleVisibility(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := h.svc.SetVisibility(achID, userID, req.IsPublic); err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Achievement not found")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to update visibility")
-		}
+		handleServiceErr(w, err, "AchievementHandler.ToggleVisibility", "Failed to update visibility")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Visibility updated", "is_public": req.IsPublic})

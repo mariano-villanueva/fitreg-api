@@ -3,8 +3,6 @@ package handlers
 import (
 	"bytes"
 	"crypto/rand"
-	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -119,7 +117,7 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	f, err := h.svc.Upload(r.Context(), uuid, storageKey, fileWithHeader, contentType, header.Filename, header.Size, userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to upload file")
+		handleServiceErr(w, err, "FileHandler.Upload", "Failed to upload file")
 		return
 	}
 	writeJSON(w, http.StatusCreated, f)
@@ -140,16 +138,8 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contentType, reader, err := h.svc.Download(r.Context(), uuid, userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "File not found")
-		return
-	}
-	if errors.Is(err, services.ErrForbidden) {
-		writeError(w, http.StatusForbidden, "Access denied")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to download file")
+		handleServiceErr(w, err, "FileHandler.Download", "Failed to download file")
 		return
 	}
 	defer reader.Close()
@@ -176,16 +166,8 @@ func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := h.svc.Delete(r.Context(), uuid, userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "File not found")
-		return
-	}
-	if errors.Is(err, services.ErrForbidden) {
-		writeError(w, http.StatusForbidden, "Not authorized to delete this file")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to delete file")
+		handleServiceErr(w, err, "FileHandler.Delete", "Failed to delete file")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "file deleted"})
