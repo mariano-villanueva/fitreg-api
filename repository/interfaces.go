@@ -58,6 +58,19 @@ type TemplateRepository interface {
 	GetCoachID(id int64) (int64, error)
 }
 
+// WeeklyTemplateRepository handles CRUD and assignment for weekly workout templates.
+type WeeklyTemplateRepository interface {
+	Create(coachID int64, req models.CreateWeeklyTemplateRequest) (int64, error)
+	GetByID(id int64) (models.WeeklyTemplate, error)
+	List(coachID int64) ([]models.WeeklyTemplate, error)
+	UpdateMeta(id, coachID int64, req models.UpdateWeeklyTemplateRequest) error
+	Delete(id, coachID int64) (bool, error)
+	PutDays(templateID int64, days []models.WeeklyTemplateDayRequest) error
+	// Assign checks for conflicts and creates assigned_workouts in one transaction.
+	// Returns assigned IDs on success, conflicting dates (YYYY-MM-DD) on 409.
+	Assign(templateID, coachID int64, req models.AssignWeeklyTemplateRequest) ([]int64, []string, error)
+}
+
 // CoachProfileRepository handles all coach profile-related database operations.
 type CoachProfileRepository interface {
 	UpdateProfile(coachID int64, req models.UpdateCoachProfileRequest) error
