@@ -30,7 +30,7 @@ func extractID(path, prefix string) (int64, error) {
 //	    handleServiceErr(w, err, "CoachHandler.ListStudents", "Failed to list students")
 //	    return
 //	}
-func handleServiceErr(w http.ResponseWriter, err error, op, fallbackMsg string) {
+func handleServiceErr(w http.ResponseWriter, err error, op, internalCode, fallbackMsg string) {
 	var code int
 	var msg string
 
@@ -52,5 +52,5 @@ func handleServiceErr(w http.ResponseWriter, err error, op, fallbackMsg string) 
 		msg = fallbackMsg
 	}
 
-	writeAppError(w, apperr.New(code, op, msg, err))
+	writeAppError(w, apperr.New(code, op, internalCode, msg, err))
 }

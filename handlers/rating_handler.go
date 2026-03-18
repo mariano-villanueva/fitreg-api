@@ -50,7 +50,7 @@ func (h *RatingHandler) UpsertRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeAppError(w, apperr.New(http.StatusInternalServerError, "RatingHandler.UpsertRating", "Failed to save rating", err))
+		writeAppError(w, apperr.New(http.StatusInternalServerError, "RatingHandler.UpsertRating", apperr.RATING_001, "Failed to save rating", err))
 		return
 	}
 
@@ -68,7 +68,7 @@ func (h *RatingHandler) GetRatings(w http.ResponseWriter, r *http.Request) {
 
 	ratings, err := h.svc.List(coachID)
 	if err != nil {
-		handleServiceErr(w, err, "RatingHandler.GetRatings", "Failed to fetch ratings")
+		handleServiceErr(w, err, "RatingHandler.GetRatings", apperr.RATING_002, "Failed to fetch ratings")
 		return
 	}
 

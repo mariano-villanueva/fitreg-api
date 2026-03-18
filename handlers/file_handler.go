@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/services"
 )
@@ -117,7 +118,7 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	f, err := h.svc.Upload(r.Context(), uuid, storageKey, fileWithHeader, contentType, header.Filename, header.Size, userID)
 	if err != nil {
-		handleServiceErr(w, err, "FileHandler.Upload", "Failed to upload file")
+		handleServiceErr(w, err, "FileHandler.Upload", apperr.FILE_001, "Failed to upload file")
 		return
 	}
 	writeJSON(w, http.StatusCreated, f)
@@ -139,7 +140,7 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 
 	contentType, reader, err := h.svc.Download(r.Context(), uuid, userID)
 	if err != nil {
-		handleServiceErr(w, err, "FileHandler.Download", "Failed to download file")
+		handleServiceErr(w, err, "FileHandler.Download", apperr.FILE_002, "Failed to download file")
 		return
 	}
 	defer reader.Close()
@@ -167,7 +168,7 @@ func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	err := h.svc.Delete(r.Context(), uuid, userID)
 	if err != nil {
-		handleServiceErr(w, err, "FileHandler.Delete", "Failed to delete file")
+		handleServiceErr(w, err, "FileHandler.Delete", apperr.FILE_003, "Failed to delete file")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "file deleted"})

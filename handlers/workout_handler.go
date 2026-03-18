@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -25,7 +26,7 @@ func (h *WorkoutHandler) ListWorkouts(w http.ResponseWriter, r *http.Request) {
 	}
 	workouts, err := h.svc.List(userID)
 	if err != nil {
-		handleServiceErr(w, err, "WorkoutHandler.ListWorkouts", "Failed to fetch workouts")
+		handleServiceErr(w, err, "WorkoutHandler.ListWorkouts", apperr.WORKOUT_001, "Failed to fetch workouts")
 		return
 	}
 	writeJSON(w, http.StatusOK, workouts)
@@ -44,7 +45,7 @@ func (h *WorkoutHandler) GetWorkout(w http.ResponseWriter, r *http.Request) {
 	}
 	wo, err := h.svc.GetByID(id, userID)
 	if err != nil {
-		handleServiceErr(w, err, "WorkoutHandler.GetWorkout", "Failed to fetch workout")
+		handleServiceErr(w, err, "WorkoutHandler.GetWorkout", apperr.WORKOUT_002, "Failed to fetch workout")
 		return
 	}
 	writeJSON(w, http.StatusOK, wo)
@@ -71,7 +72,7 @@ func (h *WorkoutHandler) CreateWorkout(w http.ResponseWriter, r *http.Request) {
 	}
 	wo, err := h.svc.Create(userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "WorkoutHandler.CreateWorkout", "Failed to create workout")
+		handleServiceErr(w, err, "WorkoutHandler.CreateWorkout", apperr.WORKOUT_003, "Failed to create workout")
 		return
 	}
 	writeJSON(w, http.StatusCreated, wo)
@@ -99,7 +100,7 @@ func (h *WorkoutHandler) UpdateWorkout(w http.ResponseWriter, r *http.Request) {
 	}
 	wo, err := h.svc.Update(id, userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "WorkoutHandler.UpdateWorkout", "Failed to update workout")
+		handleServiceErr(w, err, "WorkoutHandler.UpdateWorkout", apperr.WORKOUT_004, "Failed to update workout")
 		return
 	}
 	writeJSON(w, http.StatusOK, wo)
@@ -118,7 +119,7 @@ func (h *WorkoutHandler) DeleteWorkout(w http.ResponseWriter, r *http.Request) {
 	}
 	err = h.svc.Delete(id, userID)
 	if err != nil {
-		handleServiceErr(w, err, "WorkoutHandler.DeleteWorkout", "Failed to delete workout")
+		handleServiceErr(w, err, "WorkoutHandler.DeleteWorkout", apperr.WORKOUT_005, "Failed to delete workout")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Workout deleted"})

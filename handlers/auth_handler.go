@@ -34,7 +34,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.svc.GoogleLogin(req.Credential)
 	if err != nil {
-		writeAppError(w, apperr.New(http.StatusUnauthorized, "AuthHandler.GoogleLogin", "Authentication failed", err))
+		writeAppError(w, apperr.New(http.StatusUnauthorized, "AuthHandler.GoogleLogin", apperr.AUTH_001, "Authentication failed", err))
 		return
 	}
 

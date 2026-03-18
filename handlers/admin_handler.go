@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/services"
 )
@@ -22,7 +23,7 @@ func (h *AdminHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	stats, err := h.svc.GetStats(userID)
 	if err != nil {
-		handleServiceErr(w, err, "AdminHandler.GetStats", "Failed to fetch stats")
+		handleServiceErr(w, err, "AdminHandler.GetStats", apperr.ADMIN_001, "Failed to fetch stats")
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
@@ -66,7 +67,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	offset := (page - 1) * limit
 	users, total, err := h.svc.ListUsers(userID, search, role, sortCol, sortOrder, limit, offset)
 	if err != nil {
-		handleServiceErr(w, err, "AdminHandler.ListUsers", "Failed to fetch users")
+		handleServiceErr(w, err, "AdminHandler.ListUsers", apperr.ADMIN_002, "Failed to fetch users")
 		return
 	}
 
@@ -97,7 +98,7 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.UpdateUser(userID, targetID, req.IsCoach, req.IsAdmin); err != nil {
-		handleServiceErr(w, err, "AdminHandler.UpdateUser", "Failed to update user")
+		handleServiceErr(w, err, "AdminHandler.UpdateUser", apperr.ADMIN_003, "Failed to update user")
 		return
 	}
 
@@ -108,7 +109,7 @@ func (h *AdminHandler) PendingAchievements(w http.ResponseWriter, r *http.Reques
 	userID := middleware.UserIDFromContext(r.Context())
 	achievements, err := h.svc.ListPendingAchievements(userID)
 	if err != nil {
-		handleServiceErr(w, err, "AdminHandler.PendingAchievements", "Failed to fetch achievements")
+		handleServiceErr(w, err, "AdminHandler.PendingAchievements", apperr.ADMIN_004, "Failed to fetch achievements")
 		return
 	}
 	writeJSON(w, http.StatusOK, achievements)
@@ -125,7 +126,7 @@ func (h *AdminHandler) VerifyAchievement(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.svc.VerifyAchievement(achID, userID); err != nil {
-		handleServiceErr(w, err, "AdminHandler.VerifyAchievement", "Failed to verify achievement")
+		handleServiceErr(w, err, "AdminHandler.VerifyAchievement", apperr.ADMIN_005, "Failed to verify achievement")
 		return
 	}
 
@@ -151,7 +152,7 @@ func (h *AdminHandler) RejectAchievement(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.svc.RejectAchievement(achID, userID, req.Reason); err != nil {
-		handleServiceErr(w, err, "AdminHandler.RejectAchievement", "Failed to reject achievement")
+		handleServiceErr(w, err, "AdminHandler.RejectAchievement", apperr.ADMIN_006, "Failed to reject achievement")
 		return
 	}
 

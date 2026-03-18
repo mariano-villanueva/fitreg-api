@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -29,7 +30,7 @@ func (h *WeeklyTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	templates, err := h.svc.List(userID)
 	if err != nil {
-		handleServiceErr(w, err, "WeeklyTemplateHandler.List", "Failed to fetch weekly templates")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.List", apperr.WEEKLY_TEMPLATE_001, "Failed to fetch weekly templates")
 		return
 	}
 	writeJSON(w, http.StatusOK, templates)
@@ -49,7 +50,7 @@ func (h *WeeklyTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpl, err := h.svc.Create(userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "WeeklyTemplateHandler.Create", "Failed to create weekly template")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.Create", apperr.WEEKLY_TEMPLATE_002, "Failed to create weekly template")
 		return
 	}
 	writeJSON(w, http.StatusCreated, tmpl)
@@ -69,7 +70,7 @@ func (h *WeeklyTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpl, err := h.svc.Get(id, userID)
 	if err != nil {
-		handleServiceErr(w, err, "WeeklyTemplateHandler.Get", "Failed to fetch weekly template")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.Get", apperr.WEEKLY_TEMPLATE_003, "Failed to fetch weekly template")
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -94,7 +95,7 @@ func (h *WeeklyTemplateHandler) UpdateMeta(w http.ResponseWriter, r *http.Reques
 	}
 	tmpl, err := h.svc.UpdateMeta(id, userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "WeeklyTemplateHandler.UpdateMeta", "Failed to update weekly template")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.UpdateMeta", apperr.WEEKLY_TEMPLATE_004, "Failed to update weekly template")
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -114,7 +115,7 @@ func (h *WeeklyTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	err = h.svc.Delete(id, userID)
 	if err != nil {
-		handleServiceErr(w, err, "WeeklyTemplateHandler.Delete", "Failed to delete weekly template")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.Delete", apperr.WEEKLY_TEMPLATE_005, "Failed to delete weekly template")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -142,7 +143,7 @@ func (h *WeeklyTemplateHandler) PutDays(w http.ResponseWriter, r *http.Request) 
 	}
 	tmpl, err := h.svc.PutDays(id, userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "WeeklyTemplateHandler.PutDays", "Failed to update days")
+		handleServiceErr(w, err, "WeeklyTemplateHandler.PutDays", apperr.WEEKLY_TEMPLATE_006, "Failed to update days")
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -185,7 +186,7 @@ func (h *WeeklyTemplateHandler) Assign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		handleServiceErr(w, err, "WeeklyTemplateHandler.Assign", err.Error())
+		handleServiceErr(w, err, "WeeklyTemplateHandler.Assign", apperr.WEEKLY_TEMPLATE_007, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, resp)

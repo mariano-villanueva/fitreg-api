@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -43,7 +44,7 @@ func (h *TemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := h.svc.Create(userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "TemplateHandler.Create", "Failed to create template")
+		handleServiceErr(w, err, "TemplateHandler.Create", apperr.TEMPLATE_001, "Failed to create template")
 		return
 	}
 
@@ -60,7 +61,7 @@ func (h *TemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	templates, err := h.svc.List(userID)
 	if err != nil {
-		handleServiceErr(w, err, "TemplateHandler.List", "Failed to fetch templates")
+		handleServiceErr(w, err, "TemplateHandler.List", apperr.TEMPLATE_002, "Failed to fetch templates")
 		return
 	}
 
@@ -83,7 +84,7 @@ func (h *TemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := h.svc.Get(id, userID)
 	if err != nil {
-		handleServiceErr(w, err, "TemplateHandler.Get", "Failed to fetch template")
+		handleServiceErr(w, err, "TemplateHandler.Get", apperr.TEMPLATE_003, "Failed to fetch template")
 		return
 	}
 
@@ -122,7 +123,7 @@ func (h *TemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := h.svc.Update(id, userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "TemplateHandler.Update", "Failed to update template")
+		handleServiceErr(w, err, "TemplateHandler.Update", apperr.TEMPLATE_004, "Failed to update template")
 		return
 	}
 
@@ -145,7 +146,7 @@ func (h *TemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	err = h.svc.Delete(id, userID)
 	if err != nil {
-		handleServiceErr(w, err, "TemplateHandler.Delete", "Failed to delete template")
+		handleServiceErr(w, err, "TemplateHandler.Delete", apperr.TEMPLATE_005, "Failed to delete template")
 		return
 	}
 

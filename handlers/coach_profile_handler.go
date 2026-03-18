@@ -35,7 +35,7 @@ func (h *CoachProfileHandler) UpdateCoachProfile(w http.ResponseWriter, r *http.
 
 	err := h.svc.UpdateProfile(userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "CoachProfileHandler.UpdateCoachProfile", "Failed to update coach profile")
+		handleServiceErr(w, err, "CoachProfileHandler.UpdateCoachProfile", apperr.COACH_PROFILE_001, "Failed to update coach profile")
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *CoachProfileHandler) ListCoaches(w http.ResponseWriter, r *http.Request
 
 	coaches, total, err := h.svc.ListCoaches(search, locality, level, sortBy, limit, offset)
 	if err != nil {
-		writeAppError(w, apperr.New(http.StatusInternalServerError, "CoachProfileHandler.ListCoaches", "Failed to fetch coaches", err))
+		writeAppError(w, apperr.New(http.StatusInternalServerError, "CoachProfileHandler.ListCoaches", apperr.COACH_PROFILE_002, "Failed to fetch coaches", err))
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *CoachProfileHandler) GetCoachProfile(w http.ResponseWriter, r *http.Req
 
 	profile, err := h.svc.GetCoachProfile(coachID, userID)
 	if err != nil {
-		handleServiceErr(w, err, "CoachProfileHandler.GetCoachProfile", "Failed to fetch coach profile")
+		handleServiceErr(w, err, "CoachProfileHandler.GetCoachProfile", apperr.COACH_PROFILE_003, "Failed to fetch coach profile")
 		return
 	}
 

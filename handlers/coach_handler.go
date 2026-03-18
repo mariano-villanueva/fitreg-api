@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -30,7 +31,7 @@ func (h *CoachHandler) ListStudents(w http.ResponseWriter, r *http.Request) {
 
 	students, err := h.svc.ListStudents(userID)
 	if err != nil {
-		handleServiceErr(w, err, "CoachHandler.ListStudents", "Failed to fetch students")
+		handleServiceErr(w, err, "CoachHandler.ListStudents", apperr.COACH_001, "Failed to fetch students")
 		return
 	}
 
@@ -53,7 +54,7 @@ func (h *CoachHandler) EndRelationship(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.EndRelationship(csID, userID); err != nil {
-		handleServiceErr(w, err, "CoachHandler.EndRelationship", "Failed to end relationship")
+		handleServiceErr(w, err, "CoachHandler.EndRelationship", apperr.COACH_002, "Failed to end relationship")
 		return
 	}
 
@@ -77,7 +78,7 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 
 	workouts, err := h.svc.GetStudentWorkouts(userID, studentID)
 	if err != nil {
-		handleServiceErr(w, err, "CoachHandler.GetStudentWorkouts", "Failed to fetch workouts")
+		handleServiceErr(w, err, "CoachHandler.GetStudentWorkouts", apperr.COACH_003, "Failed to fetch workouts")
 		return
 	}
 
@@ -122,7 +123,7 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 
 	workouts, total, err := h.svc.ListAssignedWorkouts(userID, studentID, statusFilter, startDate, endDate, limit, offset)
 	if err != nil {
-		handleServiceErr(w, err, "CoachHandler.ListAssignedWorkouts", "Failed to fetch assigned workouts")
+		handleServiceErr(w, err, "CoachHandler.ListAssignedWorkouts", apperr.COACH_004, "Failed to fetch assigned workouts")
 		return
 	}
 
@@ -162,7 +163,7 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	aw, err := h.svc.CreateAssignedWorkout(userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "CoachHandler.CreateAssignedWorkout", "Failed to create assigned workout")
+		handleServiceErr(w, err, "CoachHandler.CreateAssignedWorkout", apperr.COACH_005, "Failed to create assigned workout")
 		return
 	}
 
@@ -185,7 +186,7 @@ func (h *CoachHandler) GetAssignedWorkout(w http.ResponseWriter, r *http.Request
 
 	aw, err := h.svc.GetAssignedWorkout(awID, userID)
 	if err != nil {
-		handleServiceErr(w, err, "CoachHandler.GetAssignedWorkout", "Failed to fetch assigned workout")
+		handleServiceErr(w, err, "CoachHandler.GetAssignedWorkout", apperr.COACH_006, "Failed to fetch assigned workout")
 		return
 	}
 
@@ -219,7 +220,7 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	aw, err := h.svc.UpdateAssignedWorkout(awID, userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "CoachHandler.UpdateAssignedWorkout", "Failed to update assigned workout")
+		handleServiceErr(w, err, "CoachHandler.UpdateAssignedWorkout", apperr.COACH_007, "Failed to update assigned workout")
 		return
 	}
 
@@ -241,7 +242,7 @@ func (h *CoachHandler) DeleteAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.svc.DeleteAssignedWorkout(awID, userID); err != nil {
-		handleServiceErr(w, err, "CoachHandler.DeleteAssignedWorkout", "Failed to delete assigned workout")
+		handleServiceErr(w, err, "CoachHandler.DeleteAssignedWorkout", apperr.COACH_008, "Failed to delete assigned workout")
 		return
 	}
 
@@ -261,7 +262,7 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 
 	workouts, err := h.svc.GetMyAssignedWorkouts(userID, startDate, endDate)
 	if err != nil {
-		handleServiceErr(w, err, "CoachHandler.GetMyAssignedWorkouts", "Failed to fetch assigned workouts")
+		handleServiceErr(w, err, "CoachHandler.GetMyAssignedWorkouts", apperr.COACH_009, "Failed to fetch assigned workouts")
 		return
 	}
 
@@ -314,7 +315,7 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 	}
 
 	if err := h.svc.UpdateAssignedWorkoutStatus(awID, userID, req); err != nil {
-		handleServiceErr(w, err, "CoachHandler.UpdateAssignedWorkoutStatus", "Failed to update status")
+		handleServiceErr(w, err, "CoachHandler.UpdateAssignedWorkoutStatus", apperr.COACH_010, "Failed to update status")
 		return
 	}
 
@@ -340,7 +341,7 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.svc.GetDailySummary(userID, date)
 	if err != nil {
-		handleServiceErr(w, err, "CoachHandler.GetDailySummary", "Failed to fetch daily summary")
+		handleServiceErr(w, err, "CoachHandler.GetDailySummary", apperr.COACH_011, "Failed to fetch daily summary")
 		return
 	}
 

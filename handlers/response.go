@@ -19,11 +19,11 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 // cause (ae.Err) is included in the log but never sent to the client.
 func writeAppError(w http.ResponseWriter, ae *apperr.AppError) {
 	if ae.Err != nil {
-		log.Printf("ERROR [%s] HTTP %d: %s — %v", ae.Op, ae.Code, ae.Message, ae.Err)
+		log.Printf("ERROR [%s | %s] HTTP %d: %s — %v", ae.Op, ae.InternalCode, ae.Code, ae.Message, ae.Err)
 	} else {
-		log.Printf("ERROR [%s] HTTP %d: %s", ae.Op, ae.Code, ae.Message)
+		log.Printf("ERROR [%s | %s] HTTP %d: %s", ae.Op, ae.InternalCode, ae.Code, ae.Message)
 	}
-	writeJSON(w, ae.Code, map[string]string{"error": ae.Message})
+	writeJSON(w, ae.Code, map[string]string{"error": ae.Message, "code": ae.InternalCode})
 }
 
 // writeError writes a simple error response and logs it.

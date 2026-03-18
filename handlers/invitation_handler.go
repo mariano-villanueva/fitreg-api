@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -34,7 +35,7 @@ func (h *InvitationHandler) CreateInvitation(w http.ResponseWriter, r *http.Requ
 
 	inv, err := h.svc.Create(userID, req)
 	if err != nil {
-		handleServiceErr(w, err, "InvitationHandler.CreateInvitation", "Failed to create invitation")
+		handleServiceErr(w, err, "InvitationHandler.CreateInvitation", apperr.INVITATION_001, "Failed to create invitation")
 		return
 	}
 
@@ -62,7 +63,7 @@ func (h *InvitationHandler) ListInvitations(w http.ResponseWriter, r *http.Reque
 
 	invitations, err := h.svc.List(userID, status, direction, limit, offset)
 	if err != nil {
-		handleServiceErr(w, err, "InvitationHandler.ListInvitations", "Failed to fetch invitations")
+		handleServiceErr(w, err, "InvitationHandler.ListInvitations", apperr.INVITATION_002, "Failed to fetch invitations")
 		return
 	}
 
@@ -84,7 +85,7 @@ func (h *InvitationHandler) GetInvitation(w http.ResponseWriter, r *http.Request
 
 	inv, err := h.svc.GetByID(invID, userID)
 	if err != nil {
-		handleServiceErr(w, err, "InvitationHandler.GetInvitation", "Failed to fetch invitation")
+		handleServiceErr(w, err, "InvitationHandler.GetInvitation", apperr.INVITATION_003, "Failed to fetch invitation")
 		return
 	}
 
@@ -112,7 +113,7 @@ func (h *InvitationHandler) RespondInvitation(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.svc.Respond(invID, userID, req.Action); err != nil {
-		handleServiceErr(w, err, "InvitationHandler.RespondInvitation", "Failed to respond to invitation")
+		handleServiceErr(w, err, "InvitationHandler.RespondInvitation", apperr.INVITATION_004, "Failed to respond to invitation")
 		return
 	}
 
@@ -133,7 +134,7 @@ func (h *InvitationHandler) CancelInvitation(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.svc.Cancel(invID, userID); err != nil {
-		handleServiceErr(w, err, "InvitationHandler.CancelInvitation", "Failed to cancel invitation")
+		handleServiceErr(w, err, "InvitationHandler.CancelInvitation", apperr.INVITATION_005, "Failed to cancel invitation")
 		return
 	}
 
