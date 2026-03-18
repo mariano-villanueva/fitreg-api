@@ -270,7 +270,9 @@ func (r *coachRepository) CreateAssignedWorkout(coachID int64, req models.Create
 
 func (r *coachRepository) GetAssignedWorkout(awID, coachID int64) (models.AssignedWorkout, error) {
 	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields sql.NullString
+	var description, notes, dueDate, expectedFields, workoutType sql.NullString
+	var distanceKm sql.NullFloat64
+	var durationSeconds sql.NullInt64
 	var studentName string
 	err := r.db.QueryRow(`
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
@@ -281,13 +283,22 @@ func (r *coachRepository) GetAssignedWorkout(awID, coachID int64) (models.Assign
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
 		WHERE aw.id = ? AND aw.coach_id = ?
-	`, awID, coachID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+	`, awID, coachID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
+		&distanceKm, &durationSeconds, &notes, &expectedFields,
 		&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 		&aw.ImageFileID, &aw.Status, &dueDate,
 		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
 	if err != nil {
 		return models.AssignedWorkout{}, err
+	}
+	if workoutType.Valid {
+		aw.Type = workoutType.String
+	}
+	if distanceKm.Valid {
+		aw.DistanceKm = distanceKm.Float64
+	}
+	if durationSeconds.Valid {
+		aw.DurationSeconds = int(durationSeconds.Int64)
 	}
 	if description.Valid {
 		aw.Description = description.String
@@ -362,7 +373,9 @@ func (r *coachRepository) UpdateAssignedWorkout(awID, coachID int64, req models.
 
 	// Return updated workout (fetch by ID without coach_id filter for the SELECT back)
 	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields sql.NullString
+	var description, notes, dueDate, expectedFields, workoutType2 sql.NullString
+	var distanceKm2 sql.NullFloat64
+	var durationSeconds2 sql.NullInt64
 	var studentName string
 	err = r.db.QueryRow(`
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
@@ -373,13 +386,22 @@ func (r *coachRepository) UpdateAssignedWorkout(awID, coachID int64, req models.
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
 		WHERE aw.id = ?
-	`, awID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+	`, awID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType2,
+		&distanceKm2, &durationSeconds2, &notes, &expectedFields,
 		&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 		&aw.ImageFileID, &aw.Status, &dueDate,
 		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
 	if err != nil {
 		return models.AssignedWorkout{}, err
+	}
+	if workoutType2.Valid {
+		aw.Type = workoutType2.String
+	}
+	if distanceKm2.Valid {
+		aw.DistanceKm = distanceKm2.Float64
+	}
+	if durationSeconds2.Valid {
+		aw.DurationSeconds = int(durationSeconds2.Int64)
 	}
 	if description.Valid {
 		aw.Description = description.String
