@@ -3,6 +3,9 @@
 
 -- Drop all tables in reverse dependency order
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS weekly_template_day_segments;
+DROP TABLE IF EXISTS weekly_template_days;
+DROP TABLE IF EXISTS weekly_templates;
 DROP TABLE IF EXISTS workout_template_segments;
 DROP TABLE IF EXISTS workout_templates;
 DROP TABLE IF EXISTS notification_preferences;
@@ -316,10 +319,6 @@ CREATE TABLE workout_template_segments (
 -- ============================================================
 -- WEEKLY TEMPLATES
 -- ============================================================
-DROP TABLE IF EXISTS weekly_template_day_segments;
-DROP TABLE IF EXISTS weekly_template_days;
-DROP TABLE IF EXISTS weekly_templates;
-
 CREATE TABLE weekly_templates (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     coach_id BIGINT NOT NULL,
