@@ -270,26 +270,38 @@ func (r *weeklyTemplateRepository) Assign(templateID, coachID int64, req models.
 	}
 	defer tx.Rollback()
 
-	// Check for conflicts.
-	var conflicting []string
-	for _, p := range planned {
-		dateStr := p.dueDate.Format(time.DateOnly)
-		var exists int
-		if err := tx.QueryRow(
-			`SELECT COUNT(*) FROM assigned_workouts WHERE student_id = ? AND due_date = ?`,
-			req.StudentID, dateStr,
-		).Scan(&exists); err != nil {
+	if req.Force {
+		// Delete the entire week for this student so the template overwrites everything.
+		weekStart := startDate.Format(time.DateOnly)
+		weekEnd := startDate.AddDate(0, 0, 6).Format(time.DateOnly)
+		if _, err := tx.Exec(
+			`DELETE FROM assigned_workouts WHERE student_id = ? AND due_date >= ? AND due_date <= ?`,
+			req.StudentID, weekStart, weekEnd,
+		); err != nil {
 			return nil, nil, err
 		}
-		if exists > 0 {
-			conflicting = append(conflicting, dateStr)
+	} else {
+		// Check for conflicts.
+		var conflicting []string
+		for _, p := range planned {
+			dateStr := p.dueDate.Format(time.DateOnly)
+			var exists int
+			if err := tx.QueryRow(
+				`SELECT COUNT(*) FROM assigned_workouts WHERE student_id = ? AND due_date = ?`,
+				req.StudentID, dateStr,
+			).Scan(&exists); err != nil {
+				return nil, nil, err
+			}
+			if exists > 0 {
+				conflicting = append(conflicting, dateStr)
+			}
+		}
+		if len(conflicting) > 0 {
+			return nil, conflicting, nil
 		}
 	}
-	if len(conflicting) > 0 {
-		return nil, conflicting, nil
-	}
 
-	// No conflicts — insert assigned_workouts and segments.
+	// Insert assigned_workouts and segments.
 	var ids []int64
 	for _, p := range planned {
 		dateStr := p.dueDate.Format(time.DateOnly)

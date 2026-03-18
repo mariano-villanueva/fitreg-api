@@ -175,9 +175,11 @@ func (r *coachRepository) ListAssignedWorkouts(coachID int64, studentID int64, s
 	workouts := []models.AssignedWorkout{}
 	for rows.Next() {
 		var aw models.AssignedWorkout
-		var description, notes, dueDate, expectedFields sql.NullString
-		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+		var description, notes, dueDate, expectedFields, workoutType sql.NullString
+		var distanceKm sql.NullFloat64
+		var durationSeconds sql.NullInt64
+		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
+			&distanceKm, &durationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 			&aw.ImageFileID, &aw.Status, &dueDate,
 			&aw.CreatedAt, &aw.UpdatedAt, &aw.StudentName, &aw.UnreadMessageCount); err != nil {
@@ -194,6 +196,15 @@ func (r *coachRepository) ListAssignedWorkouts(coachID int64, studentID int64, s
 		}
 		if expectedFields.Valid {
 			aw.ExpectedFields = json.RawMessage(expectedFields.String)
+		}
+		if workoutType.Valid {
+			aw.Type = workoutType.String
+		}
+		if distanceKm.Valid {
+			aw.DistanceKm = distanceKm.Float64
+		}
+		if durationSeconds.Valid {
+			aw.DurationSeconds = int(durationSeconds.Int64)
 		}
 		workouts = append(workouts, aw)
 	}
@@ -437,9 +448,11 @@ func (r *coachRepository) GetMyAssignedWorkouts(studentID int64, startDate, endD
 	workouts := []models.AssignedWorkout{}
 	for rows.Next() {
 		var aw models.AssignedWorkout
-		var description, notes, dueDate, expectedFields sql.NullString
-		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+		var description, notes, dueDate, expectedFields, workoutType sql.NullString
+		var distanceKm sql.NullFloat64
+		var durationSeconds sql.NullInt64
+		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
+			&distanceKm, &durationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 			&aw.ImageFileID, &aw.Status, &dueDate,
 			&aw.CreatedAt, &aw.UpdatedAt, &aw.CoachName, &aw.UnreadMessageCount); err != nil {
@@ -456,6 +469,15 @@ func (r *coachRepository) GetMyAssignedWorkouts(studentID int64, startDate, endD
 		}
 		if expectedFields.Valid {
 			aw.ExpectedFields = json.RawMessage(expectedFields.String)
+		}
+		if workoutType.Valid {
+			aw.Type = workoutType.String
+		}
+		if distanceKm.Valid {
+			aw.DistanceKm = distanceKm.Float64
+		}
+		if durationSeconds.Valid {
+			aw.DurationSeconds = int(durationSeconds.Int64)
 		}
 		workouts = append(workouts, aw)
 	}

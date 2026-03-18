@@ -97,6 +97,7 @@ type PutDaysRequest struct {
 type AssignWeeklyTemplateRequest struct {
 	StudentID int64  `json:"student_id"`
 	StartDate string `json:"start_date"` // "YYYY-MM-DD", must be a Monday
+	Force     bool   `json:"force"`      // if true, overwrite the entire week
 }
 
 // AssignWeeklyTemplateResponse is returned on successful assignment.
