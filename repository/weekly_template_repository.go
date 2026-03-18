@@ -168,11 +168,21 @@ func (r *weeklyTemplateRepository) List(coachID int64) ([]models.WeeklyTemplate,
 }
 
 func (r *weeklyTemplateRepository) UpdateMeta(id, coachID int64, req models.UpdateWeeklyTemplateRequest) error {
-	_, err := r.db.Exec(
+	res, err := r.db.Exec(
 		`UPDATE weekly_templates SET name = ?, description = ? WHERE id = ? AND coach_id = ?`,
 		req.Name, req.Description, id, coachID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (r *weeklyTemplateRepository) Delete(id, coachID int64) (bool, error) {
