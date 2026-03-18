@@ -60,6 +60,9 @@ func main() {
 			// Admin domain (Task 6)
 			repository.NewAdminRepository,
 			services.NewAdminService,
+			// Weekly template domain
+			repository.NewWeeklyTemplateRepository,
+			services.NewWeeklyTemplateService,
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,
@@ -73,6 +76,7 @@ func main() {
 			handlers.NewInvitationHandler,
 			handlers.NewAdminHandler,
 			handlers.NewCoachHandler,
+			handlers.NewWeeklyTemplateHandler,
 			handlers.NewFileHandler,
 			router.New,
 		),

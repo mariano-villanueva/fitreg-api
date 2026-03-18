@@ -22,6 +22,7 @@ func New(
 	coachProfile *handlers.CoachProfileHandler,
 	assignmentMessage *handlers.AssignmentMessageHandler,
 	admin *handlers.AdminHandler,
+	weeklyTemplate *handlers.WeeklyTemplateHandler,
 	file *handlers.FileHandler,
 	cfg *config.Config,
 ) *http.ServeMux {
@@ -147,6 +148,47 @@ func New(
 			template.Update(w, r)
 		case http.MethodDelete:
 			template.Delete(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Weekly template routes
+	mux.HandleFunc("/api/coach/weekly-templates", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			weeklyTemplate.List(w, r)
+		case http.MethodPost:
+			weeklyTemplate.Create(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/coach/weekly-templates/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/days") {
+			if r.Method == http.MethodPut {
+				weeklyTemplate.PutDays(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/assign") {
+			if r.Method == http.MethodPost {
+				weeklyTemplate.Assign(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			weeklyTemplate.Get(w, r)
+		case http.MethodPut:
+			weeklyTemplate.UpdateMeta(w, r)
+		case http.MethodDelete:
+			weeklyTemplate.Delete(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
