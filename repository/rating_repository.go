@@ -18,7 +18,7 @@ func NewRatingRepository(db *sql.DB) RatingRepository {
 
 func (r *ratingRepository) IsStudentOf(coachID, studentID int64) (bool, error) {
 	var exists int
-	err := r.db.QueryRow("SELECT 1 FROM coach_students WHERE coach_id = ? AND student_id = ?", coachID, studentID).Scan(&exists)
+	err := r.db.QueryRow("SELECT 1 FROM coach_students WHERE coach_id = ? AND student_id = ? AND status = 'active'", coachID, studentID).Scan(&exists)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

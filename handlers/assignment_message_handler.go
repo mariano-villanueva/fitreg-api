@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -32,14 +33,7 @@ func (h *AssignmentMessageHandler) ListMessages(w http.ResponseWriter, r *http.R
 	}
 	messages, err := h.svc.ListMessages(awID, userID)
 	if err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		case services.ErrForbidden:
-			writeError(w, http.StatusForbidden, "Forbidden")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to fetch messages")
-		}
+		handleServiceErr(w, err, "AssignmentMessageHandler.ListMessages", apperr.ASSIGNMENT_MSG_001, "Failed to fetch messages")
 		return
 	}
 	writeJSON(w, http.StatusOK, messages)
@@ -68,14 +62,7 @@ func (h *AssignmentMessageHandler) SendMessage(w http.ResponseWriter, r *http.Re
 	}
 	msg, err := h.svc.SendMessage(awID, userID, body)
 	if err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		case services.ErrForbidden:
-			writeError(w, http.StatusForbidden, "Forbidden")
-		default:
-			writeError(w, http.StatusConflict, err.Error())
-		}
+		handleServiceErr(w, err, "AssignmentMessageHandler.SendMessage", apperr.ASSIGNMENT_MSG_002, "Failed to send message")
 		return
 	}
 	writeJSON(w, http.StatusCreated, msg)
@@ -93,14 +80,7 @@ func (h *AssignmentMessageHandler) MarkRead(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := h.svc.MarkRead(awID, userID); err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		case services.ErrForbidden:
-			writeError(w, http.StatusForbidden, "Forbidden")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to mark messages as read")
-		}
+		handleServiceErr(w, err, "AssignmentMessageHandler.MarkRead", apperr.ASSIGNMENT_MSG_003, "Failed to mark messages as read")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -119,12 +99,7 @@ func (h *AssignmentMessageHandler) GetAssignedWorkoutDetail(w http.ResponseWrite
 	}
 	aw, err := h.svc.GetAssignedWorkoutDetail(awID, userID)
 	if err != nil {
-		switch err {
-		case services.ErrNotFound:
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workout")
-		}
+		handleServiceErr(w, err, "AssignmentMessageHandler.GetAssignedWorkoutDetail", apperr.ASSIGNMENT_MSG_004, "Failed to fetch assigned workout")
 		return
 	}
 	writeJSON(w, http.StatusOK, aw)

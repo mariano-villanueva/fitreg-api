@@ -6,6 +6,7 @@ import (
 
 	"github.com/fitreg/api/config"
 	"github.com/fitreg/api/handlers"
+	"github.com/fitreg/api/middleware"
 )
 
 func New(
@@ -21,19 +22,20 @@ func New(
 	coachProfile *handlers.CoachProfileHandler,
 	assignmentMessage *handlers.AssignmentMessageHandler,
 	admin *handlers.AdminHandler,
+	weeklyTemplate *handlers.WeeklyTemplateHandler,
 	file *handlers.FileHandler,
 	cfg *config.Config,
 ) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Auth routes (public)
-	mux.HandleFunc("/api/auth/google", func(w http.ResponseWriter, r *http.Request) {
+	// Auth routes (public, rate-limited: 10 req/IP/min)
+	mux.Handle("/api/auth/google", middleware.RateLimitAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			auth.GoogleLogin(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
-	})
+	})))
 
 	// User profile routes
 	mux.HandleFunc("/api/me", func(w http.ResponseWriter, r *http.Request) {
@@ -98,12 +100,9 @@ func New(
 
 	// Coach student routes
 	mux.HandleFunc("/api/coach/students", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
+		if r.Method == http.MethodGet {
 			coach.ListStudents(w, r)
-		case http.MethodPost:
-			coach.AddStudent(w, r)
-		default:
+		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
 	})
@@ -149,6 +148,47 @@ func New(
 			template.Update(w, r)
 		case http.MethodDelete:
 			template.Delete(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Weekly template routes
+	mux.HandleFunc("/api/coach/weekly-templates", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			weeklyTemplate.List(w, r)
+		case http.MethodPost:
+			weeklyTemplate.Create(w, r)
+		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/coach/weekly-templates/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/days") {
+			if r.Method == http.MethodPut {
+				weeklyTemplate.PutDays(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/assign") {
+			if r.Method == http.MethodPost {
+				weeklyTemplate.Assign(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			weeklyTemplate.Get(w, r)
+		case http.MethodPut:
+			weeklyTemplate.UpdateMeta(w, r)
+		case http.MethodDelete:
+			weeklyTemplate.Delete(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}

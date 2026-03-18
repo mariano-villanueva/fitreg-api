@@ -43,10 +43,6 @@ type AssignedWorkout struct {
 	UnreadMessageCount int              `json:"unread_message_count"`
 }
 
-type AddStudentRequest struct {
-	Email string `json:"email"`
-}
-
 type CreateAssignedWorkoutRequest struct {
 	StudentID       int64            `json:"student_id"`
 	Title           string           `json:"title"`

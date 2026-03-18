@@ -59,3 +59,27 @@ func (r *fileRepository) Delete(uuid string) error {
 	_, err := r.db.Exec("DELETE FROM files WHERE uuid = ?", uuid)
 	return err
 }
+
+func (r *fileRepository) CanAccess(uuid string, userID int64) (bool, error) {
+	var found int
+	err := r.db.QueryRow(`
+		SELECT 1 FROM files f
+		WHERE f.uuid = ? AND (
+			f.user_id = ?
+			OR EXISTS (SELECT 1 FROM users u WHERE u.id = ? AND u.is_admin = 1)
+			OR EXISTS (
+				SELECT 1 FROM assigned_workouts aw
+				WHERE aw.image_file_id = f.id AND aw.coach_id = ?
+			)
+			OR EXISTS (
+				SELECT 1 FROM coach_achievements ca
+				WHERE ca.image_file_id = f.id AND ca.is_public = 1
+			)
+		)
+		LIMIT 1
+	`, uuid, userID, userID, userID).Scan(&found)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return found == 1, err
+}

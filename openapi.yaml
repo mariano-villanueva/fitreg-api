@@ -1,0 +1,2431 @@
+openapi: 3.0.3
+info:
+  title: FitReg API
+  description: |
+    REST API for FitReg, a fitness coaching platform where coaches assign and manage
+    workouts for their students.
+
+    **Authentication:** All endpoints except `/health` and `POST /api/auth/google`
+    require a JWT Bearer token obtained via Google OAuth.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+    description: Authentication
+  - name: me
+    description: Current user profile
+  - name: workouts
+    description: Personal workouts
+  - name: coach-students
+    description: Coach — student management
+  - name: coach-assigned-workouts
+    description: Coach — assigned workout management
+  - name: student-assigned-workouts
+    description: Student — view and submit assigned workouts
+  - name: coach-templates
+    description: Coach — daily workout templates
+  - name: coach-weekly-templates
+    description: Coach — weekly workout templates
+  - name: coach-profile
+    description: Coach profile settings
+  - name: coaches
+    description: Public coach directory
+  - name: achievements
+    description: Coach achievements
+  - name: invitations
+    description: Coach-student invitations
+  - name: notifications
+    description: Notifications
+  - name: files
+    description: File upload/download
+  - name: assignment-messages
+    description: Messages on assigned workouts
+  - name: admin
+    description: Admin operations
+
+paths:
+  /health:
+    get:
+      tags: [auth]
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/auth/google:
+    post:
+      tags: [auth]
+      summary: Exchange Google credential for JWT
+      description: |
+        Rate limited to 10 requests per IP per minute.
+        Verifies the Google ID token, upserts the user, and returns a JWT.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential:
+                  type: string
+                  description: Google ID token from Google OAuth
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT to use in Authorization header
+                  user:
+                    $ref: "#/components/schemas/UserProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /api/me:
+    get:
+      tags: [me]
+      summary: Get own profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [me]
+      summary: Update profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/me/avatar:
+    post:
+      tags: [me]
+      summary: Upload custom avatar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Avatar uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [me]
+      summary: Delete custom avatar
+      responses:
+        "200":
+          description: Avatar deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/coach-request:
+    get:
+      tags: [coach-students]
+      summary: Get current coach request status
+      responses:
+        "200":
+          description: Request status
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [coach-students]
+      summary: Request a coach (student initiates)
+      responses:
+        "200":
+          description: Request created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/workouts:
+    get:
+      tags: [workouts]
+      summary: List own workouts
+      responses:
+        "200":
+          description: List of workouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Workout"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [workouts]
+      summary: Create workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkoutRequest"
+      responses:
+        "201":
+          description: Created workout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workout"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/workouts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    get:
+      tags: [workouts]
+      summary: Get workout
+      responses:
+        "200":
+          description: Workout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workout"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [workouts]
+      summary: Update workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkoutRequest"
+      responses:
+        "200":
+          description: Updated workout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workout"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [workouts]
+      summary: Delete workout
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coach/students:
+    get:
+      tags: [coach-students]
+      summary: List active students
+      responses:
+        "200":
+          description: Students
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoachStudentInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/coach/students/{studentId}/workouts:
+    parameters:
+      - name: studentId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      tags: [coach-students]
+      summary: Get student's assigned workouts
+      responses:
+        "200":
+          description: Assigned workouts for student
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssignedWorkout"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coach/daily-summary:
+    get:
+      tags: [coach-students]
+      summary: Today's workout summary for all students
+      responses:
+        "200":
+          description: Daily summary
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailySummaryItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/coach-students/{id}/end:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [coach-students]
+      summary: End a coach-student relationship
+      responses:
+        "200":
+          description: Relationship ended
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coach/assigned-workouts:
+    get:
+      tags: [coach-assigned-workouts]
+      summary: List all assigned workouts (coach view)
+      responses:
+        "200":
+          description: Assigned workouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssignedWorkout"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [coach-assigned-workouts]
+      summary: Create assigned workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssignedWorkoutRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignedWorkout"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/coach/assigned-workouts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    get:
+      tags: [coach-assigned-workouts]
+      summary: Get assigned workout
+      responses:
+        "200":
+          description: Assigned workout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignedWorkout"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [coach-assigned-workouts]
+      summary: Update assigned workout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssignedWorkoutRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignedWorkout"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [coach-assigned-workouts]
+      summary: Delete assigned workout
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/my-assigned-workouts:
+    get:
+      tags: [student-assigned-workouts]
+      summary: Get own assigned workouts
+      responses:
+        "200":
+          description: Assigned workouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssignedWorkout"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/my-assigned-workouts/{id}/status:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [student-assigned-workouts]
+      summary: Submit workout result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAssignedWorkoutStatusRequest"
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignedWorkout"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coach/templates:
+    get:
+      tags: [coach-templates]
+      summary: List workout templates
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkoutTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [coach-templates]
+      summary: Create workout template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTemplateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkoutTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/coach/templates/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    get:
+      tags: [coach-templates]
+      summary: Get workout template
+      responses:
+        "200":
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkoutTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [coach-templates]
+      summary: Update workout template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTemplateRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkoutTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [coach-templates]
+      summary: Delete workout template
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coach/weekly-templates:
+    get:
+      tags: [coach-weekly-templates]
+      summary: List weekly templates
+      responses:
+        "200":
+          description: Weekly templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WeeklyTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [coach-weekly-templates]
+      summary: Create weekly template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/coach/weekly-templates/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    get:
+      tags: [coach-weekly-templates]
+      summary: Get weekly template with all days and segments
+      responses:
+        "200":
+          description: Weekly template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyTemplate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [coach-weekly-templates]
+      summary: Update name/description
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [coach-weekly-templates]
+      summary: Delete weekly template
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coach/weekly-templates/{id}/days:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [coach-weekly-templates]
+      summary: Replace all days (full replacement)
+      description: |
+        Replaces all days in the weekly template. Days not included are deleted.
+        Each day has `day_of_week` (0=Monday, 6=Sunday). Only one entry per day allowed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [days]
+              properties:
+                days:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/WeeklyTemplateDayRequest"
+      responses:
+        "200":
+          description: Updated template with all days
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyTemplate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coach/weekly-templates/{id}/assign:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    post:
+      tags: [coach-weekly-templates]
+      summary: Assign weekly template to a student
+      description: |
+        Assigns all days of the weekly template to the student starting on `start_date` (must be a Monday).
+
+        - `force: false` (default): Returns 409 if any day in the Mon–Sun range already has an assigned workout.
+        - `force: true`: Deletes all existing assigned workouts for that student in the full Mon–Sun week, then creates new ones from the template.
+
+        Rest days (no day defined in template) are skipped — no workout is created for those days.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignWeeklyTemplateRequest"
+      responses:
+        "200":
+          description: Successfully assigned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assigned_workout_ids:
+                    type: array
+                    items:
+                      type: integer
+                      format: int64
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Conflict — some days in that week already have workouts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignConflictResponse"
+
+  /api/coach/profile:
+    put:
+      tags: [coach-profile]
+      summary: Update coach profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                coach_description:
+                  type: string
+                coach_public:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/coaches:
+    get:
+      tags: [coaches]
+      summary: List public coaches
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by name or description
+      responses:
+        "200":
+          description: Coaches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoachListItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/coaches/{coachId}:
+    parameters:
+      - name: coachId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      tags: [coaches]
+      summary: Get coach public profile
+      responses:
+        "200":
+          description: Coach profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachPublicProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coaches/{coachId}/ratings:
+    parameters:
+      - name: coachId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      tags: [coaches]
+      summary: Get ratings for a coach
+      responses:
+        "200":
+          description: Ratings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoachRating"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [coaches]
+      summary: Create or update rating (student only, upsert)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertRatingRequest"
+      responses:
+        "200":
+          description: Rating saved
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/coach/achievements:
+    get:
+      tags: [achievements]
+      summary: List own achievements
+      responses:
+        "200":
+          description: Achievements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoachAchievement"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [achievements]
+      summary: Create achievement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAchievementRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachAchievement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/coach/achievements/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [achievements]
+      summary: Update achievement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAchievementRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachAchievement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [achievements]
+      summary: Delete achievement
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/coach/achievements/{id}/visibility:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [achievements]
+      summary: Toggle achievement visibility (is_public)
+      responses:
+        "200":
+          description: Visibility toggled
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/invitations:
+    get:
+      tags: [invitations]
+      summary: List own invitations
+      responses:
+        "200":
+          description: Invitations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invitation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [invitations]
+      summary: Create invitation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvitationRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/invitations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    get:
+      tags: [invitations]
+      summary: Get invitation
+      responses:
+        "200":
+          description: Invitation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [invitations]
+      summary: Cancel invitation
+      responses:
+        "204":
+          description: Cancelled
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/invitations/{id}/respond:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [invitations]
+      summary: Accept or reject invitation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [accept, reject]
+      responses:
+        "200":
+          description: Response recorded
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/notifications:
+    get:
+      tags: [notifications]
+      summary: List notifications
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/notifications/unread-count:
+    get:
+      tags: [notifications]
+      summary: Get unread notification count
+      responses:
+        "200":
+          description: Count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/notifications/read-all:
+    put:
+      tags: [notifications]
+      summary: Mark all notifications as read
+      responses:
+        "200":
+          description: All marked read
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/notifications/{id}/read:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [notifications]
+      summary: Mark notification as read
+      responses:
+        "200":
+          description: Marked read
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/notifications/{id}/action:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    post:
+      tags: [notifications]
+      summary: Execute a notification action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key:
+                  type: string
+                  description: Action key from notification.actions
+      responses:
+        "200":
+          description: Action executed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/notification-preferences:
+    get:
+      tags: [notifications]
+      summary: Get notification preferences
+      responses:
+        "200":
+          description: Preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferences"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [notifications]
+      summary: Update notification preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationPreferences"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPreferences"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/files:
+    post:
+      tags: [files]
+      summary: Upload a file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/files/{uuid}/download:
+    parameters:
+      - name: uuid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [files]
+      summary: Download file by UUID
+      responses:
+        "200":
+          description: File content
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/files/{uuid}:
+    parameters:
+      - name: uuid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [files]
+      summary: Delete file
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/assignment-messages/{awId}:
+    parameters:
+      - name: awId
+        in: path
+        required: true
+        description: Assigned workout ID
+        schema:
+          type: integer
+          format: int64
+    get:
+      tags: [assignment-messages]
+      summary: List messages for an assigned workout
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssignmentMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [assignment-messages]
+      summary: Send a message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/assignment-messages/{awId}/read:
+    parameters:
+      - name: awId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    put:
+      tags: [assignment-messages]
+      summary: Mark messages as read
+      responses:
+        "200":
+          description: Marked read
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/assigned-workout-detail/{awId}:
+    parameters:
+      - name: awId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      tags: [assignment-messages]
+      summary: Get full workout detail with messages
+      responses:
+        "200":
+          description: Workout detail with messages
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/admin/stats:
+    get:
+      tags: [admin]
+      summary: Platform statistics
+      responses:
+        "200":
+          description: Stats
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/admin/users:
+    get:
+      tags: [admin]
+      summary: List all users
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/admin/users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [admin]
+      summary: Update user (grant roles, etc.)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_coach:
+                  type: boolean
+                is_admin:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/admin/achievements/pending:
+    get:
+      tags: [admin]
+      summary: List unverified achievements
+      responses:
+        "200":
+          description: Pending achievements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoachAchievement"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/admin/achievements/{id}/verify:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [admin]
+      summary: Verify achievement
+      responses:
+        "200":
+          description: Verified
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/admin/achievements/{id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/PathId"
+    put:
+      tags: [admin]
+      summary: Reject achievement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Rejected
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        name:
+          type: string
+        avatar_url:
+          type: string
+        custom_avatar:
+          type: string
+          description: Base64-encoded custom avatar
+        sex:
+          type: string
+          enum: [M, F, other]
+        birth_date:
+          type: string
+          format: date
+        age:
+          type: integer
+          description: Calculated from birth_date
+        weight_kg:
+          type: number
+          format: float
+        height_cm:
+          type: integer
+        language:
+          type: string
+          enum: [es, en]
+        is_coach:
+          type: boolean
+        is_admin:
+          type: boolean
+        coach_description:
+          type: string
+        coach_public:
+          type: boolean
+        onboarding_completed:
+          type: boolean
+        has_coach:
+          type: boolean
+        coach_id:
+          type: integer
+          format: int64
+        coach_name:
+          type: string
+        coach_avatar:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        sex:
+          type: string
+          enum: [M, F, other]
+        birth_date:
+          type: string
+          format: date
+        weight_kg:
+          type: number
+          format: float
+        height_cm:
+          type: integer
+        language:
+          type: string
+          enum: [es, en]
+        onboarding_completed:
+          type: boolean
+
+    WorkoutSegment:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        order_index:
+          type: integer
+        segment_type:
+          type: string
+          enum: [simple, interval]
+        repetitions:
+          type: integer
+        value:
+          type: number
+          format: float
+        unit:
+          type: string
+          example: km
+        intensity:
+          type: string
+          example: easy
+        work_value:
+          type: number
+          format: float
+        work_unit:
+          type: string
+        work_intensity:
+          type: string
+        rest_value:
+          type: number
+          format: float
+        rest_unit:
+          type: string
+        rest_intensity:
+          type: string
+
+    SegmentRequest:
+      type: object
+      required: [segment_type]
+      properties:
+        segment_type:
+          type: string
+          enum: [simple, interval]
+        repetitions:
+          type: integer
+          default: 1
+        value:
+          type: number
+          format: float
+        unit:
+          type: string
+        intensity:
+          type: string
+        work_value:
+          type: number
+          format: float
+        work_unit:
+          type: string
+        work_intensity:
+          type: string
+        rest_value:
+          type: number
+          format: float
+        rest_unit:
+          type: string
+        rest_intensity:
+          type: string
+
+    Workout:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        date:
+          type: string
+          format: date
+        distance_km:
+          type: number
+          format: float
+        duration_seconds:
+          type: integer
+        avg_pace:
+          type: string
+        calories:
+          type: integer
+        avg_heart_rate:
+          type: integer
+        feeling:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+        type:
+          type: string
+          enum: [easy, tempo, intervals, long_run, race, fartlek, other]
+        notes:
+          type: string
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutSegment"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateWorkoutRequest:
+      type: object
+      required: [date, type]
+      properties:
+        date:
+          type: string
+          format: date
+        distance_km:
+          type: number
+          format: float
+        duration_seconds:
+          type: integer
+        avg_pace:
+          type: string
+        calories:
+          type: integer
+        avg_heart_rate:
+          type: integer
+        feeling:
+          type: integer
+          minimum: 1
+          maximum: 10
+        type:
+          type: string
+          enum: [easy, tempo, intervals, long_run, race, fartlek, other]
+        notes:
+          type: string
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SegmentRequest"
+
+    AssignedWorkout:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        coach_id:
+          type: integer
+          format: int64
+        student_id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        distance_km:
+          type: number
+          format: float
+        duration_seconds:
+          type: integer
+        notes:
+          type: string
+        expected_fields:
+          type: array
+          items:
+            type: string
+        result_time_seconds:
+          type: integer
+          nullable: true
+        result_distance_km:
+          type: number
+          format: float
+          nullable: true
+        result_heart_rate:
+          type: integer
+          nullable: true
+        result_feeling:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+        image_file_id:
+          type: integer
+          format: int64
+          nullable: true
+        image_url:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, skipped]
+        due_date:
+          type: string
+          format: date
+        student_name:
+          type: string
+        coach_name:
+          type: string
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutSegment"
+        unread_message_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateAssignedWorkoutRequest:
+      type: object
+      required: [student_id, title, due_date]
+      properties:
+        student_id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        distance_km:
+          type: number
+          format: float
+        duration_seconds:
+          type: integer
+        notes:
+          type: string
+        expected_fields:
+          type: array
+          items:
+            type: string
+        due_date:
+          type: string
+          format: date
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SegmentRequest"
+
+    UpdateAssignedWorkoutStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [completed, skipped]
+        result_time_seconds:
+          type: integer
+          nullable: true
+        result_distance_km:
+          type: number
+          format: float
+          nullable: true
+        result_heart_rate:
+          type: integer
+          nullable: true
+        result_feeling:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+        image_file_id:
+          type: integer
+          format: int64
+          nullable: true
+
+    CoachStudentInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+        avatar_url:
+          type: string
+
+    DailySummaryItem:
+      type: object
+      properties:
+        student_id:
+          type: integer
+          format: int64
+        student_name:
+          type: string
+        student_avatar:
+          type: string
+          nullable: true
+        assigned_workout:
+          allOf:
+            - $ref: "#/components/schemas/AssignedWorkout"
+          nullable: true
+
+    WorkoutTemplate:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        coach_id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        notes:
+          type: string
+        expected_fields:
+          type: array
+          items:
+            type: string
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutSegment"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTemplateRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        notes:
+          type: string
+        expected_fields:
+          type: array
+          items:
+            type: string
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SegmentRequest"
+
+    WeeklyTemplate:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        coach_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        day_count:
+          type: integer
+          description: Number of days with workouts defined
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeeklyTemplateDay"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WeeklyTemplateDay:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        weekly_template_id:
+          type: integer
+          format: int64
+        day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0=Monday, 1=Tuesday, ..., 6=Sunday
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        distance_km:
+          type: number
+          format: float
+        duration_seconds:
+          type: integer
+        notes:
+          type: string
+        from_template_id:
+          type: integer
+          format: int64
+          nullable: true
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutSegment"
+
+    WeeklyTemplateDayRequest:
+      type: object
+      required: [day_of_week, title]
+      properties:
+        day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0=Monday, 1=Tuesday, ..., 6=Sunday
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        distance_km:
+          type: number
+          format: float
+        duration_seconds:
+          type: integer
+        notes:
+          type: string
+        from_template_id:
+          type: integer
+          format: int64
+          nullable: true
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SegmentRequest"
+
+    AssignWeeklyTemplateRequest:
+      type: object
+      required: [student_id, start_date]
+      properties:
+        student_id:
+          type: integer
+          format: int64
+        start_date:
+          type: string
+          format: date
+          description: Must be a Monday (YYYY-MM-DD)
+        force:
+          type: boolean
+          default: false
+          description: If true, overwrites all existing workouts in that week
+
+    AssignConflictResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: conflict
+        conflicting_dates:
+          type: array
+          items:
+            type: string
+            format: date
+
+    CoachListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        avatar_url:
+          type: string
+        coach_description:
+          type: string
+        coach_locality:
+          type: string
+        coach_level:
+          type: string
+        avg_rating:
+          type: number
+          format: float
+        rating_count:
+          type: integer
+        verified_achievements:
+          type: integer
+
+    CoachPublicProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        avatar_url:
+          type: string
+        coach_description:
+          type: string
+        avg_rating:
+          type: number
+          format: float
+        rating_count:
+          type: integer
+        student_count:
+          type: integer
+        verified_achievement_count:
+          type: integer
+        is_my_coach:
+          type: boolean
+        achievements:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoachAchievement"
+        ratings:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoachRating"
+
+    CoachAchievement:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        coach_id:
+          type: integer
+          format: int64
+        event_name:
+          type: string
+        event_date:
+          type: string
+          format: date
+        distance_km:
+          type: number
+          format: float
+        result_time:
+          type: string
+          example: "3:45:00"
+        position:
+          type: integer
+        extra_info:
+          type: string
+        image_file_id:
+          type: integer
+          format: int64
+          nullable: true
+        image_url:
+          type: string
+        is_public:
+          type: boolean
+        is_verified:
+          type: boolean
+        rejection_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateAchievementRequest:
+      type: object
+      required: [event_name, event_date, distance_km, result_time]
+      properties:
+        event_name:
+          type: string
+        event_date:
+          type: string
+          format: date
+        distance_km:
+          type: number
+          format: float
+        result_time:
+          type: string
+          example: "3:45:00"
+        position:
+          type: integer
+        extra_info:
+          type: string
+        image_file_id:
+          type: integer
+          format: int64
+          nullable: true
+
+    CoachRating:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        coach_id:
+          type: integer
+          format: int64
+        student_id:
+          type: integer
+          format: int64
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        student_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpsertRatingRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+
+    Invitation:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        type:
+          type: string
+          enum: [coach_invite, student_request]
+        sender_id:
+          type: integer
+          format: int64
+        receiver_id:
+          type: integer
+          format: int64
+        message:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected, cancelled]
+        sender_name:
+          type: string
+        sender_avatar:
+          type: string
+        receiver_name:
+          type: string
+        receiver_avatar:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateInvitationRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [coach_invite, student_request]
+        receiver_email:
+          type: string
+          format: email
+        receiver_id:
+          type: integer
+          format: int64
+        message:
+          type: string
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              style:
+                type: string
+        is_read:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationPreferences:
+      type: object
+      properties:
+        workout_assigned:
+          type: boolean
+        workout_completed_or_skipped:
+          type: boolean
+        assignment_message:
+          type: boolean
+
+    File:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        uuid:
+          type: string
+          format: uuid
+        original_name:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    AssignmentMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        assigned_workout_id:
+          type: integer
+          format: int64
+        sender_id:
+          type: integer
+          format: int64
+        sender_name:
+          type: string
+        sender_avatar:
+          type: string
+        body:
+          type: string
+        is_read:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        name:
+          type: string
+        avatar_url:
+          type: string
+        is_coach:
+          type: boolean
+        is_admin:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time

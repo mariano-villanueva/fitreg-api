@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 
 	"github.com/fitreg/api/models"
 )
@@ -91,7 +92,9 @@ func (r *assignmentMessageRepository) MarkRead(awID, userID int64) error {
 
 func (r *assignmentMessageRepository) GetAssignedWorkoutDetail(awID, userID int64) (models.AssignedWorkout, error) {
 	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields sql.NullString
+	var description, notes, dueDate, expectedFields, workoutType sql.NullString
+	var distanceKm sql.NullFloat64
+	var durationSeconds sql.NullInt64
 	var studentName, coachName string
 	err := r.db.QueryRow(`
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
@@ -107,8 +110,8 @@ func (r *assignmentMessageRepository) GetAssignedWorkoutDetail(awID, userID int6
 		JOIN users uc ON uc.id = aw.coach_id
 		WHERE aw.id = ? AND (aw.coach_id = ? OR aw.student_id = ?)
 	`, userID, awID, userID, userID).Scan(
-		&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+		&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
+		&distanceKm, &durationSeconds, &notes, &expectedFields,
 		&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 		&aw.ImageFileID, &aw.Status, &dueDate,
 		&aw.CreatedAt, &aw.UpdatedAt,
@@ -116,6 +119,15 @@ func (r *assignmentMessageRepository) GetAssignedWorkoutDetail(awID, userID int6
 	)
 	if err != nil {
 		return models.AssignedWorkout{}, err
+	}
+	if workoutType.Valid {
+		aw.Type = workoutType.String
+	}
+	if distanceKm.Valid {
+		aw.DistanceKm = distanceKm.Float64
+	}
+	if durationSeconds.Valid {
+		aw.DurationSeconds = int(durationSeconds.Int64)
 	}
 	if description.Valid {
 		aw.Description = description.String
@@ -173,5 +185,14 @@ func truncateDate(s string) string {
 	if len(s) >= 10 {
 		return s[:10]
 	}
+	return s
+}
+
+// escapeLike escapes LIKE wildcard characters (%, _, \) in user-supplied
+// search terms so they are treated as literals, not SQL wildcards.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
 	return s
 }

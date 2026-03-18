@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"runtime"
+
+	"github.com/fitreg/api/apperr"
 )
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -13,20 +14,29 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
-	if status >= 500 {
-		_, file, line, _ := runtime.Caller(1)
-		log.Printf("ERROR [%s:%d] %d: %s", file, line, status, message)
+// writeAppError logs the full error context and writes the user-facing message
+// as a JSON response. Always logs regardless of status code; the underlying
+// cause (ae.Err) is included in the log but never sent to the client.
+func writeAppError(w http.ResponseWriter, ae *apperr.AppError) {
+	if ae.Err != nil {
+		log.Printf("ERROR [%s | %s] HTTP %d: %s — %v", ae.Op, ae.InternalCode, ae.Code, ae.Message, ae.Err)
+	} else {
+		log.Printf("ERROR [%s | %s] HTTP %d: %s", ae.Op, ae.InternalCode, ae.Code, ae.Message)
 	}
+	writeJSON(w, ae.Code, map[string]string{"error": ae.Message, "code": ae.InternalCode})
+}
+
+// writeError writes a simple error response and logs it.
+// Use writeAppError when you have an underlying error to preserve.
+func writeError(w http.ResponseWriter, status int, message string) {
+	log.Printf("ERROR HTTP %d: %s", status, message)
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-// logErr logs an error with caller context. Use for errors that are handled
-// but should be visible in logs for debugging.
+// logErr logs a non-fatal error with its context string.
 func logErr(context string, err error) {
 	if err == nil {
 		return
 	}
-	_, file, line, _ := runtime.Caller(1)
-	log.Printf("ERROR [%s:%d] %s: %v", file, line, context, err)
+	log.Printf("WARN [%s]: %v", context, err)
 }

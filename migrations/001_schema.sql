@@ -3,6 +3,9 @@
 
 -- Drop all tables in reverse dependency order
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS weekly_template_day_segments;
+DROP TABLE IF EXISTS weekly_template_days;
+DROP TABLE IF EXISTS weekly_templates;
 DROP TABLE IF EXISTS workout_template_segments;
 DROP TABLE IF EXISTS workout_templates;
 DROP TABLE IF EXISTS notification_preferences;
@@ -311,4 +314,55 @@ CREATE TABLE workout_template_segments (
     rest_unit VARCHAR(10),
     rest_intensity VARCHAR(20),
     FOREIGN KEY (template_id) REFERENCES workout_templates(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- WEEKLY TEMPLATES
+-- ============================================================
+CREATE TABLE weekly_templates (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    coach_id BIGINT NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at DATETIME NOT NULL DEFAULT NOW(),
+    updated_at DATETIME NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+    FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_wt_weekly_coach (coach_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE weekly_template_days (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    weekly_template_id BIGINT NOT NULL,
+    day_of_week TINYINT NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50),
+    distance_km DECIMAL(10,2),
+    duration_seconds INT,
+    notes TEXT,
+    from_template_id BIGINT NULL,
+    created_at DATETIME NOT NULL DEFAULT NOW(),
+    updated_at DATETIME NOT NULL DEFAULT NOW() ON UPDATE NOW(),
+    FOREIGN KEY (weekly_template_id) REFERENCES weekly_templates(id) ON DELETE CASCADE,
+    FOREIGN KEY (from_template_id) REFERENCES workout_templates(id) ON DELETE SET NULL,
+    UNIQUE KEY uq_wtd_day (weekly_template_id, day_of_week),
+    CONSTRAINT chk_wtd_day CHECK (day_of_week BETWEEN 0 AND 6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE weekly_template_day_segments (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    weekly_template_day_id BIGINT NOT NULL,
+    order_index INT NOT NULL DEFAULT 0,
+    segment_type ENUM('simple','interval') NOT NULL DEFAULT 'simple',
+    repetitions INT DEFAULT 1,
+    value DECIMAL(10,2),
+    unit VARCHAR(10),
+    intensity VARCHAR(20),
+    work_value DECIMAL(10,2),
+    work_unit VARCHAR(10),
+    work_intensity VARCHAR(20),
+    rest_value DECIMAL(10,2),
+    rest_unit VARCHAR(10),
+    rest_intensity VARCHAR(20),
+    FOREIGN KEY (weekly_template_day_id) REFERENCES weekly_template_days(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

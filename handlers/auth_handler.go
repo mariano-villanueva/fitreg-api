@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/services"
 )
 
@@ -34,8 +34,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.svc.GoogleLogin(req.Credential)
 	if err != nil {
-		log.Printf("ERROR GoogleLogin: %v", err)
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAppError(w, apperr.New(http.StatusUnauthorized, "AuthHandler.GoogleLogin", apperr.AUTH_001, "Authentication failed", err))
 		return
 	}
 

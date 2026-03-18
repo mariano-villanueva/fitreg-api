@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/services"
@@ -31,20 +31,11 @@ func (h *CoachHandler) ListStudents(w http.ResponseWriter, r *http.Request) {
 
 	students, err := h.svc.ListStudents(userID)
 	if err != nil {
-		if errors.Is(err, services.ErrNotCoach) {
-			writeError(w, http.StatusForbidden, "User is not a coach")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch students")
+		handleServiceErr(w, err, "CoachHandler.ListStudents", apperr.COACH_001, "Failed to fetch students")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, students)
-}
-
-// AddStudent is deprecated - use POST /api/invitations instead
-func (h *CoachHandler) AddStudent(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusGone, "Use POST /api/invitations to invite students")
 }
 
 // EndRelationship handles PUT /api/coach-students/{id}/end
@@ -63,16 +54,7 @@ func (h *CoachHandler) EndRelationship(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.EndRelationship(csID, userID); err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotFound):
-			writeError(w, http.StatusNotFound, "Relationship not found")
-		case errors.Is(err, services.ErrForbidden):
-			writeError(w, http.StatusForbidden, "Access denied")
-		case err.Error() == "relationship is not active":
-			writeError(w, http.StatusConflict, "Relationship is not active")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to end relationship")
-		}
+		handleServiceErr(w, err, "CoachHandler.EndRelationship", apperr.COACH_002, "Failed to end relationship")
 		return
 	}
 
@@ -96,11 +78,7 @@ func (h *CoachHandler) GetStudentWorkouts(w http.ResponseWriter, r *http.Request
 
 	workouts, err := h.svc.GetStudentWorkouts(userID, studentID)
 	if err != nil {
-		if errors.Is(err, services.ErrForbidden) {
-			writeError(w, http.StatusForbidden, "Student does not belong to this coach")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch workouts")
+		handleServiceErr(w, err, "CoachHandler.GetStudentWorkouts", apperr.COACH_003, "Failed to fetch workouts")
 		return
 	}
 
@@ -126,10 +104,14 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 	startDate := r.URL.Query().Get("start_date")
 	endDate := r.URL.Query().Get("end_date")
 
+	const maxPageLimit = 100
 	limit := 0
 	offset := 0
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			if l > maxPageLimit {
+				l = maxPageLimit
+			}
 			limit = l
 		}
 	}
@@ -141,7 +123,7 @@ func (h *CoachHandler) ListAssignedWorkouts(w http.ResponseWriter, r *http.Reque
 
 	workouts, total, err := h.svc.ListAssignedWorkouts(userID, studentID, statusFilter, startDate, endDate, limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workouts")
+		handleServiceErr(w, err, "CoachHandler.ListAssignedWorkouts", apperr.COACH_004, "Failed to fetch assigned workouts")
 		return
 	}
 
@@ -181,14 +163,7 @@ func (h *CoachHandler) CreateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	aw, err := h.svc.CreateAssignedWorkout(userID, req)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotCoach):
-			writeError(w, http.StatusForbidden, "User is not a coach")
-		case errors.Is(err, services.ErrForbidden):
-			writeError(w, http.StatusForbidden, "Student does not belong to this coach")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to create assigned workout")
-		}
+		handleServiceErr(w, err, "CoachHandler.CreateAssignedWorkout", apperr.COACH_005, "Failed to create assigned workout")
 		return
 	}
 
@@ -211,11 +186,7 @@ func (h *CoachHandler) GetAssignedWorkout(w http.ResponseWriter, r *http.Request
 
 	aw, err := h.svc.GetAssignedWorkout(awID, userID)
 	if err != nil {
-		if errors.Is(err, services.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workout")
+		handleServiceErr(w, err, "CoachHandler.GetAssignedWorkout", apperr.COACH_006, "Failed to fetch assigned workout")
 		return
 	}
 
@@ -249,14 +220,7 @@ func (h *CoachHandler) UpdateAssignedWorkout(w http.ResponseWriter, r *http.Requ
 
 	aw, err := h.svc.UpdateAssignedWorkout(awID, userID, req)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotFound):
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		case errors.Is(err, services.ErrWorkoutFinished):
-			writeError(w, http.StatusBadRequest, "Cannot edit a finished workout")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to update assigned workout")
-		}
+		handleServiceErr(w, err, "CoachHandler.UpdateAssignedWorkout", apperr.COACH_007, "Failed to update assigned workout")
 		return
 	}
 
@@ -278,14 +242,7 @@ func (h *CoachHandler) DeleteAssignedWorkout(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.svc.DeleteAssignedWorkout(awID, userID); err != nil {
-		switch {
-		case errors.Is(err, services.ErrNotFound):
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-		case errors.Is(err, services.ErrWorkoutFinished):
-			writeError(w, http.StatusBadRequest, "Cannot delete a finished workout")
-		default:
-			writeError(w, http.StatusInternalServerError, "Failed to delete assigned workout")
-		}
+		handleServiceErr(w, err, "CoachHandler.DeleteAssignedWorkout", apperr.COACH_008, "Failed to delete assigned workout")
 		return
 	}
 
@@ -305,7 +262,7 @@ func (h *CoachHandler) GetMyAssignedWorkouts(w http.ResponseWriter, r *http.Requ
 
 	workouts, err := h.svc.GetMyAssignedWorkouts(userID, startDate, endDate)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to fetch assigned workouts")
+		handleServiceErr(w, err, "CoachHandler.GetMyAssignedWorkouts", apperr.COACH_009, "Failed to fetch assigned workouts")
 		return
 	}
 
@@ -343,12 +300,22 @@ func (h *CoachHandler) UpdateAssignedWorkoutStatus(w http.ResponseWriter, r *htt
 		return
 	}
 
+	// Sanity bounds on optional numeric result fields to prevent garbage data.
+	if req.ResultDistanceKm != nil && (*req.ResultDistanceKm < 0 || *req.ResultDistanceKm > 1000) {
+		writeError(w, http.StatusBadRequest, "result_distance_km must be between 0 and 1000")
+		return
+	}
+	if req.ResultTimeSeconds != nil && (*req.ResultTimeSeconds < 0 || *req.ResultTimeSeconds > 86400*7) {
+		writeError(w, http.StatusBadRequest, "result_time_seconds must be between 0 and 604800")
+		return
+	}
+	if req.ResultHeartRate != nil && (*req.ResultHeartRate < 0 || *req.ResultHeartRate > 300) {
+		writeError(w, http.StatusBadRequest, "result_heart_rate must be between 0 and 300")
+		return
+	}
+
 	if err := h.svc.UpdateAssignedWorkoutStatus(awID, userID, req); err != nil {
-		if errors.Is(err, services.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "Assigned workout not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to update status")
+		handleServiceErr(w, err, "CoachHandler.UpdateAssignedWorkoutStatus", apperr.COACH_010, "Failed to update status")
 		return
 	}
 
@@ -374,11 +341,7 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.svc.GetDailySummary(userID, date)
 	if err != nil {
-		if errors.Is(err, services.ErrNotCoach) {
-			writeError(w, http.StatusForbidden, "User is not a coach")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch daily summary")
+		handleServiceErr(w, err, "CoachHandler.GetDailySummary", apperr.COACH_011, "Failed to fetch daily summary")
 		return
 	}
 

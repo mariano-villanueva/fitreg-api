@@ -1,247 +1,436 @@
-# FitRegAPI - Technical Specification
+# FitReg API — Technical Specification
 
 ## Overview
 
-Go REST API for FitReg, a running workout tracking platform with coach-athlete system. Built with Go standard library (no framework), MySQL, JWT auth, and Google OAuth.
+FitReg is a fitness coaching platform where coaches assign and manage workouts for their students. The API is a REST HTTP service built in Go using the standard library, with Uber's `fx` for dependency injection and MySQL as the database.
 
-## Project Structure
+**Base URL:** `http://localhost:8080`
+**Auth:** JWT Bearer token (obtained via Google OAuth)
 
-```
-FitRegAPI/
-├── main.go                       # Entry point
-├── go.mod / go.sum               # Dependencies
-├── .env                          # Environment config
-├── config/
-│   └── config.go                 # Config loading from env vars
-├── database/
-│   └── mysql.go                  # MySQL connection pool
-├── router/
-│   └── router.go                 # Route definitions
-├── middleware/
-│   ├── auth.go                   # JWT auth middleware
-│   └── cors.go                   # CORS middleware
-├── handlers/
-│   ├── auth_handler.go           # Google login
-│   ├── user_handler.go           # Profile CRUD + coach request
-│   ├── workout_handler.go        # Personal workout CRUD
-│   ├── coach_handler.go          # Coach/student/assignment endpoints
-│   ├── coach_profile_handler.go  # Coach directory & public profile
-│   ├── achievement_handler.go    # Coach achievements CRUD
-│   ├── rating_handler.go         # Student ratings for coaches
-│   ├── invitation_handler.go     # Coach-student invitation system
-│   ├── notification_handler.go   # Notification system with actions
-│   └── admin_handler.go          # Admin panel endpoints
-├── models/
-│   ├── user.go                   # User model
-│   ├── workout.go                # Workout model
-│   ├── coach.go                  # Coach, AssignedWorkout, Segment, Achievement, Rating models
-│   ├── invitation.go             # Invitation model
-│   └── notification.go           # Notification, NotificationAction, NotificationPreferences models
-└── migrations/
-    └── 001_schema.sql            # Consolidated schema (all tables)
-```
+---
 
-## Dependencies
+## Architecture
+
+### Layers
 
 ```
-go 1.21
-github.com/go-sql-driver/mysql v1.8.1
-github.com/golang-jwt/jwt/v5 v5.3.1
+HTTP Request
+    → Middleware (Auth → CORS → Rate Limit)
+    → Handler (parse input, call service, write response)
+    → Service (business logic, validation)
+    → Repository (SQL queries, DB access)
+    → MySQL
 ```
 
-## Environment Variables (.env)
+### Dependency Injection
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| DB_HOST | localhost | MySQL host |
-| DB_PORT | 3306 | MySQL port |
-| DB_USER | root | MySQL user |
-| DB_PASSWORD | root | MySQL password |
-| DB_NAME | fitreg | Database name |
-| PORT | — | HTTP port (Railway injects this) |
-| SERVER_PORT | 8080 | HTTP port fallback |
-| GOOGLE_CLIENT_ID | — | Google OAuth client ID |
-| JWT_SECRET | — | JWT signing secret |
-| ALLOWED_ORIGINS | localhost:3000,localhost:5173 | Comma-separated CORS origins |
+`go.uber.org/fx` wires all components at startup. Each domain (workout, template, coach, etc.) has: `Repository → Service → Handler`.
 
-Port resolution order: `PORT` → `SERVER_PORT` → `8080` (for Railway compatibility).
+### File Storage
 
-Load with: `export $(cat .env | xargs) && go run main.go`
+Supports two backends (via `STORAGE_PROVIDER` env var):
+- `local` — filesystem under `LOCAL_STORAGE_PATH` (default `./uploads`)
+- `s3` — AWS S3 (or compatible)
+
+Files are tracked in the `files` table. Downloads use a UUID, not the internal ID.
+
+---
+
+## Environment Variables
+
+| Variable | Default | Required |
+|----------|---------|----------|
+| `DB_HOST` | `localhost` | No |
+| `DB_PORT` | `3306` | No |
+| `DB_USER` | `root` | No |
+| `DB_PASSWORD` | _(empty)_ | No |
+| `DB_NAME` | `fitreg` | No |
+| `SERVER_PORT` / `PORT` | `8080` | No |
+| `GOOGLE_CLIENT_ID` | _(none)_ | **Yes** |
+| `JWT_SECRET` | `change-me-in-production` | No |
+| `STORAGE_PROVIDER` | `local` | No |
+| `LOCAL_STORAGE_PATH` | `./uploads` | No |
+| `S3_BUCKET` | _(empty)_ | If S3 |
+| `S3_REGION` | `us-east-1` | If S3 |
+| `AWS_ACCESS_KEY_ID` | _(empty)_ | If S3 |
+| `AWS_SECRET_ACCESS_KEY` | _(empty)_ | If S3 |
+| `S3_ENDPOINT` | _(empty)_ | If S3 |
+| `ALLOWED_ORIGINS` | _(empty)_ | No |
+
+---
+
+## Middleware
+
+### Authentication (`middleware/auth.go`)
+
+- **Public routes** (no token required): `GET /health`, `POST /api/auth/google`
+- **All other routes** require `Authorization: Bearer <jwt>` header
+- Token claims must contain `user_id` (float64)
+- Returns `401 Unauthorized` on failure
+
+### CORS (`middleware/cors.go`)
+
+- Hardcoded allowed origins: `http://localhost:3000`, `http://localhost:5173`
+- Extra origins via `ALLOWED_ORIGINS` env var (comma-separated)
+- Allowed methods: `GET, POST, PUT, DELETE, OPTIONS`
+- Allowed headers: `Content-Type, Authorization`
+- Credentials: enabled
+
+### Rate Limiting (`middleware/rate_limit.go`)
+
+- Applied only to `POST /api/auth/google`
+- Limit: 10 requests per IP per minute (sliding window)
+- Exceeding limit returns `429 Too Many Requests` with `Retry-After: 60`
+
+---
 
 ## Database Schema
 
-### users
+### `users`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| google_id | VARCHAR(255) UNIQUE | Google OAuth ID |
-| email | VARCHAR(255) | |
-| name | VARCHAR(255) | |
-| avatar_url | TEXT | Google profile picture |
-| custom_avatar | MEDIUMTEXT | Base64 data URI (nullable). Takes priority over avatar_url in all responses |
-| sex | ENUM('M','F','other') | Nullable |
-| birth_date | DATE | Nullable |
-| age | — | Computed from birth_date in Go (not a DB column) |
-| weight_kg | DECIMAL(5,2) | Nullable |
-| height_cm | INT | Nullable |
-| language | VARCHAR(5) DEFAULT 'es' | 'es' or 'en' |
-| is_coach | BOOLEAN DEFAULT FALSE | Enabled by admin approval |
-| is_admin | BOOLEAN DEFAULT FALSE | Enables admin panel access |
-| coach_description | TEXT | Coach bio/description |
-| coach_public | BOOLEAN DEFAULT FALSE | Visible in coach directory |
-| coach_locality | VARCHAR(255) | Coach location (set during coach request) |
-| coach_level | VARCHAR(255) | Comma-separated training levels (e.g. "beginner,advanced") |
-| onboarding_completed | BOOLEAN DEFAULT FALSE | User completed onboarding |
-| created_at | TIMESTAMP | |
-| updated_at | TIMESTAMP | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `google_id` | VARCHAR(255) UNIQUE | Google OAuth sub |
+| `email` | VARCHAR(255) | |
+| `name` | VARCHAR(255) | |
+| `avatar_url` | TEXT | Google-provided avatar |
+| `custom_avatar` | MEDIUMTEXT | Base64 custom avatar |
+| `sex` | ENUM('M','F','other') | |
+| `weight_kg` | DECIMAL(5,2) | |
+| `birth_date` | DATE NULL | |
+| `height_cm` | INT NULL | |
+| `language` | VARCHAR(5) | `es` or `en` |
+| `is_coach` | BOOLEAN DEFAULT 0 | |
+| `is_admin` | BOOLEAN DEFAULT 0 | |
+| `coach_description` | TEXT | Coach bio |
+| `coach_public` | BOOLEAN DEFAULT 0 | Visible in directory |
+| `coach_locality` | VARCHAR(255) | Coach location |
+| `coach_level` | VARCHAR(255) | Experience level |
+| `onboarding_completed` | BOOLEAN DEFAULT 0 | |
+| `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
+| `updated_at` | TIMESTAMP AUTO UPDATE | |
 
-### workouts (personal running logs)
+### `files`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| user_id | BIGINT FK→users | |
-| date | DATE | Required |
-| distance_km | DECIMAL(6,2) DEFAULT 0 | |
-| duration_seconds | INT DEFAULT 0 | |
-| avg_pace | VARCHAR(10) | Format: "MM:SS" |
-| calories | INT DEFAULT 0 | |
-| avg_heart_rate | INT DEFAULT 0 | |
-| type | ENUM('easy','tempo','intervals','long_run','race','fartlek','other') | |
-| notes | TEXT | |
-| created_at, updated_at | TIMESTAMP | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `uuid` | VARCHAR(36) UNIQUE | Public download identifier |
+| `user_id` | BIGINT FK → users | Owner |
+| `original_name` | VARCHAR(255) | Original filename |
+| `content_type` | VARCHAR(100) | MIME type |
+| `size_bytes` | BIGINT | |
+| `storage_key` | VARCHAR(500) | S3 key or local path |
+| `created_at` | TIMESTAMP | |
+| `updated_at` | TIMESTAMP | |
 
-Workouts include a `segments` array in all responses (list, get, create, update). At least one segment is required on create and update.
+### `workouts`
 
-### workout_segments (personal workout structure)
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| workout_id | BIGINT FK→workouts (CASCADE) | |
-| order_index | INT DEFAULT 0 | Display order |
-| segment_type | ENUM('simple','interval') DEFAULT 'simple' | |
-| repetitions | INT DEFAULT 1 | For intervals |
-| value | DECIMAL(10,2) | Simple block value |
-| unit | VARCHAR(10) | Simple block unit (km/m/min/sec) |
-| intensity | VARCHAR(20) | Simple block intensity |
-| work_value | DECIMAL(10,2) | Interval work value |
-| work_unit | VARCHAR(10) | |
-| work_intensity | VARCHAR(20) | |
-| rest_value | DECIMAL(10,2) | Interval rest value |
-| rest_unit | VARCHAR(10) | |
-| rest_intensity | VARCHAR(20) | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `user_id` | BIGINT FK → users | |
+| `date` | DATE | YYYY-MM-DD |
+| `distance_km` | DECIMAL(6,2) | |
+| `duration_seconds` | INT | |
+| `avg_pace` | VARCHAR(10) | Display string e.g. `4:30/km` |
+| `calories` | INT | |
+| `avg_heart_rate` | INT | |
+| `feeling` | INT NULL | 1–10 scale |
+| `type` | ENUM('easy','tempo','intervals','long_run','race','fartlek','other') | |
+| `notes` | TEXT | |
+| `created_at` | TIMESTAMP | |
+| `updated_at` | TIMESTAMP | |
 
-### coach_students
+### `workout_segments`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| coach_id | BIGINT FK→users | |
-| student_id | BIGINT FK→users | |
-| invitation_id | BIGINT FK→invitations | Link to the invitation that created the relationship |
-| status | ENUM('active','ended') DEFAULT 'active' | |
-| started_at | TIMESTAMP | |
-| ended_at | TIMESTAMP | Nullable |
-| created_at | TIMESTAMP | |
-| | UNIQUE(coach_id, student_id) | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `workout_id` | BIGINT FK → workouts | |
+| `order_index` | INT | |
+| `segment_type` | ENUM('simple','interval') | |
+| `repetitions` | INT | |
+| `value` | DECIMAL(10,2) | |
+| `unit` | VARCHAR(10) | e.g. `km`, `min` |
+| `intensity` | VARCHAR(20) | e.g. `easy`, `hard` |
+| `work_value` | DECIMAL(10,2) | Interval work portion |
+| `work_unit` | VARCHAR(10) | |
+| `work_intensity` | VARCHAR(20) | |
+| `rest_value` | DECIMAL(10,2) | Interval rest portion |
+| `rest_unit` | VARCHAR(10) | |
+| `rest_intensity` | VARCHAR(20) | |
 
-### assigned_workouts
+### `invitations`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| coach_id | BIGINT FK→users | |
-| student_id | BIGINT FK→users | |
-| title | VARCHAR(255) | Required |
-| description | TEXT | |
-| type | VARCHAR(50) — common values: easy, tempo, intervals, long_run, long, race, fartlek, hills, recovery, other | |
-| distance_km | DECIMAL(6,2) | |
-| duration_seconds | INT | |
-| notes | TEXT | |
-| expected_fields | JSON | Array of expected student data: ['time','distance','heart_rate','feeling'] |
-| result_time_seconds | INT | Student result: time |
-| result_distance_km | DECIMAL(6,2) | Student result: distance |
-| result_heart_rate | INT | Student result: heart rate |
-| result_feeling | INT (1-10) | Student result: feeling (always required on completion) |
-| status | ENUM('pending','completed','skipped') DEFAULT 'pending' | |
-| due_date | DATE | Training day |
-| created_at, updated_at | TIMESTAMP | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `type` | ENUM('coach_invite','student_request') | Who initiated |
+| `sender_id` | BIGINT FK → users | |
+| `receiver_id` | BIGINT FK → users | |
+| `message` | TEXT NULL | Optional message |
+| `status` | ENUM('pending','accepted','rejected','cancelled') | |
+| `created_at` | DATETIME | |
+| `updated_at` | DATETIME | |
 
-### assigned_workout_segments
+### `coach_students`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| assigned_workout_id | BIGINT FK→assigned_workouts (CASCADE) | |
-| order_index | INT DEFAULT 0 | Display order |
-| segment_type | ENUM('simple','interval') | |
-| repetitions | INT DEFAULT 1 | For intervals |
-| value | DECIMAL(8,2) | Simple block value |
-| unit | ENUM('km','m','min','sec') | Simple block unit |
-| intensity | ENUM('easy','moderate','fast','sprint') | Simple block intensity |
-| work_value | DECIMAL(8,2) | Interval work value |
-| work_unit | ENUM('km','m','min','sec') | |
-| work_intensity | ENUM('easy','moderate','fast','sprint') | |
-| rest_value | DECIMAL(8,2) | Interval rest value |
-| rest_unit | ENUM('km','m','min','sec') | |
-| rest_intensity | ENUM('easy','moderate','fast','sprint') | |
-| created_at | TIMESTAMP | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `coach_id` | BIGINT FK → users | |
+| `student_id` | BIGINT FK → users | |
+| `invitation_id` | BIGINT NULL FK → invitations | |
+| `status` | ENUM('active','finished') | |
+| `started_at` | DATETIME | |
+| `finished_at` | DATETIME NULL | |
+| `created_at` | DATETIME | |
 
-### invitations
+### `coach_achievements`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| type | ENUM('coach_invite','student_request') | |
-| sender_id | BIGINT FK→users | |
-| receiver_id | BIGINT FK→users | |
-| message | TEXT | Optional message |
-| status | ENUM('pending','accepted','rejected','cancelled') DEFAULT 'pending' | |
-| created_at | TIMESTAMP | |
-| updated_at | TIMESTAMP | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `coach_id` | BIGINT FK → users | |
+| `event_name` | VARCHAR(255) | |
+| `event_date` | DATE | YYYY-MM-DD |
+| `distance_km` | DECIMAL(6,2) | |
+| `result_time` | VARCHAR(10) | HH:MM:SS |
+| `position` | INT | |
+| `extra_info` | VARCHAR(500) | |
+| `image_file_id` | BIGINT NULL FK → files | |
+| `is_public` | BOOLEAN DEFAULT 0 | |
+| `is_verified` | BOOLEAN DEFAULT 0 | Set by admin |
+| `rejection_reason` | VARCHAR(200) | |
+| `verified_by` | BIGINT NULL FK → users | Admin |
+| `verified_at` | TIMESTAMP NULL | |
+| `created_at` | TIMESTAMP | |
 
-### notifications
+### `coach_ratings`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| user_id | BIGINT FK→users | Notification recipient |
-| type | VARCHAR(50) | e.g. invitation_received, coach_request, workout_assigned |
-| title | VARCHAR(255) | i18n key for title |
-| body | TEXT | i18n key for body |
-| metadata | JSON | Dynamic data for i18n interpolation |
-| actions | JSON | Array of NotificationAction (approve/reject buttons etc.) |
-| is_read | BOOLEAN DEFAULT FALSE | |
-| created_at | TIMESTAMP | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `coach_id` | BIGINT FK → users | |
+| `student_id` | BIGINT FK → users | |
+| `rating` | INT | 1–5 |
+| `comment` | TEXT | |
+| `created_at` | DATETIME | |
+| `updated_at` | DATETIME | |
+| UNIQUE | `(coach_id, student_id)` | One rating per student-coach pair |
 
-### notification_preferences
+### `assigned_workouts`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| user_id | BIGINT FK→users UNIQUE | |
-| workout_assigned | BOOLEAN DEFAULT TRUE | |
-| workout_completed_or_skipped | BOOLEAN DEFAULT TRUE | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `coach_id` | BIGINT FK → users | |
+| `student_id` | BIGINT FK → users | |
+| `title` | VARCHAR(255) | |
+| `description` | TEXT | |
+| `type` | VARCHAR(50) | |
+| `distance_km` | DECIMAL(10,2) NULL | |
+| `duration_seconds` | INT NULL | |
+| `notes` | TEXT | |
+| `expected_fields` | JSON | Fields student should fill |
+| `result_time_seconds` | INT NULL | Filled by student |
+| `result_distance_km` | DECIMAL(10,2) NULL | Filled by student |
+| `result_heart_rate` | INT NULL | Filled by student |
+| `result_feeling` | INT NULL | 1–10, filled by student |
+| `image_file_id` | BIGINT NULL FK → files | Result photo |
+| `status` | ENUM('pending','completed','skipped') | |
+| `due_date` | DATE | YYYY-MM-DD |
+| `created_at` | DATETIME | |
+| `updated_at` | DATETIME | |
 
-### coach_achievements
+### `assigned_workout_segments`
+
+Same columns as `workout_segments`, but with `assigned_workout_id` FK instead of `workout_id`.
+
+### `assignment_messages`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| coach_id | BIGINT FK→users | |
-| event_name | VARCHAR(255) | Race/event name |
-| event_date | DATE | Event date |
-| distance_km | DECIMAL(6,2) | Distance |
-| result_time | VARCHAR(10) | Format: HH:MM:SS |
-| position | INT (nullable) | Finish position |
-| is_verified | BOOLEAN DEFAULT FALSE | Admin-validated |
-| verified_by | BIGINT FK→users (nullable) | Admin who verified |
-| verified_at | TIMESTAMP (nullable) | Verification timestamp |
-| created_at | TIMESTAMP | |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `assigned_workout_id` | BIGINT FK → assigned_workouts | |
+| `sender_id` | BIGINT FK → users | |
+| `body` | TEXT | |
+| `is_read` | BOOLEAN DEFAULT 0 | |
+| `created_at` | DATETIME | |
 
-### coach_ratings
+### `notifications`
+
 | Column | Type | Notes |
 |--------|------|-------|
-| id | BIGINT PK AUTO_INCREMENT | |
-| coach_id | BIGINT FK→users | |
-| student_id | BIGINT FK→users | |
-| rating | INT (1-10) | Score |
-| comment | TEXT (nullable) | Optional review text |
-| created_at | TIMESTAMP | |
-| updated_at | TIMESTAMP | |
-| | UNIQUE(coach_id, student_id) | One rating per student per coach |
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `user_id` | BIGINT FK → users | Recipient |
+| `type` | VARCHAR(50) | |
+| `title` | VARCHAR(255) | |
+| `body` | TEXT | |
+| `metadata` | JSON | Extra data |
+| `actions` | JSON NULL | Action buttons |
+| `is_read` | BOOLEAN DEFAULT 0 | |
+| `created_at` | DATETIME | |
+
+### `notification_preferences`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `user_id` | BIGINT FK → users UNIQUE | |
+| `workout_assigned` | BOOLEAN DEFAULT 1 | |
+| `workout_completed_or_skipped` | BOOLEAN DEFAULT 1 | |
+| `assignment_message` | BOOLEAN DEFAULT 1 | |
+
+### `workout_templates`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `coach_id` | BIGINT FK → users | |
+| `title` | VARCHAR(255) | |
+| `description` | TEXT | |
+| `type` | VARCHAR(50) | |
+| `notes` | TEXT | |
+| `expected_fields` | JSON NULL | |
+| `created_at` | DATETIME | |
+| `updated_at` | DATETIME | |
+
+### `workout_template_segments`
+
+Same columns as `workout_segments`, but with `template_id` FK.
+
+### `weekly_templates`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `coach_id` | BIGINT FK → users | |
+| `name` | VARCHAR(255) | |
+| `description` | TEXT | |
+| `created_at` | DATETIME | |
+| `updated_at` | DATETIME | |
+
+### `weekly_template_days`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | BIGINT PK AUTO_INCREMENT | |
+| `weekly_template_id` | BIGINT FK → weekly_templates | |
+| `day_of_week` | TINYINT | 0=Monday … 6=Sunday |
+| `title` | VARCHAR(255) | |
+| `description` | TEXT | |
+| `type` | VARCHAR(50) | |
+| `distance_km` | DECIMAL(10,2) NULL | |
+| `duration_seconds` | INT NULL | |
+| `notes` | TEXT | |
+| `from_template_id` | BIGINT NULL FK → workout_templates | Source template |
+| `created_at` | DATETIME | |
+| `updated_at` | DATETIME | |
+| UNIQUE | `(weekly_template_id, day_of_week)` | |
+
+### `weekly_template_day_segments`
+
+Same columns as `workout_segments`, but with `weekly_template_day_id` FK.
+
+---
+
+## Data Models (Go structs)
+
+### Segment (shared shape across all segment tables)
+
+```go
+type WorkoutSegment struct {
+    ID            int64   `json:"id"`
+    OrderIndex    int     `json:"order_index"`
+    SegmentType   string  `json:"segment_type"`   // "simple" | "interval"
+    Repetitions   int     `json:"repetitions"`
+    Value         float64 `json:"value"`
+    Unit          string  `json:"unit"`
+    Intensity     string  `json:"intensity"`
+    WorkValue     float64 `json:"work_value"`
+    WorkUnit      string  `json:"work_unit"`
+    WorkIntensity string  `json:"work_intensity"`
+    RestValue     float64 `json:"rest_value"`
+    RestUnit      string  `json:"rest_unit"`
+    RestIntensity string  `json:"rest_intensity"`
+}
+```
+
+### AssignedWorkout
+
+```go
+type AssignedWorkout struct {
+    ID                 int64            `json:"id"`
+    CoachID            int64            `json:"coach_id"`
+    StudentID          int64            `json:"student_id"`
+    Title              string           `json:"title"`
+    Description        string           `json:"description"`
+    Type               string           `json:"type"`
+    DistanceKm         float64          `json:"distance_km"`
+    DurationSeconds    int              `json:"duration_seconds"`
+    Notes              string           `json:"notes"`
+    ExpectedFields     json.RawMessage  `json:"expected_fields"`
+    ResultTimeSeconds  *int             `json:"result_time_seconds"`
+    ResultDistanceKm   *float64         `json:"result_distance_km"`
+    ResultHeartRate    *int             `json:"result_heart_rate"`
+    ResultFeeling      *int             `json:"result_feeling"`
+    ImageFileID        *int64           `json:"image_file_id"`
+    Status             string           `json:"status"`        // pending|completed|skipped
+    DueDate            string           `json:"due_date"`      // YYYY-MM-DD
+    StudentName        string           `json:"student_name,omitempty"`
+    CoachName          string           `json:"coach_name,omitempty"`
+    Segments           []WorkoutSegment `json:"segments"`
+    ImageURL           string           `json:"image_url,omitempty"`
+    UnreadMessageCount int              `json:"unread_message_count"`
+    CreatedAt          time.Time        `json:"created_at"`
+    UpdatedAt          time.Time        `json:"updated_at"`
+}
+```
+
+### WeeklyTemplate
+
+```go
+type WeeklyTemplate struct {
+    ID          int64               `json:"id"`
+    CoachID     int64               `json:"coach_id"`
+    Name        string              `json:"name"`
+    Description string              `json:"description"`
+    Days        []WeeklyTemplateDay `json:"days"`
+    DayCount    int                 `json:"day_count,omitempty"`
+    CreatedAt   string              `json:"created_at"`
+    UpdatedAt   string              `json:"updated_at"`
+}
+
+type WeeklyTemplateDay struct {
+    ID               int64                   `json:"id"`
+    WeeklyTemplateID int64                   `json:"weekly_template_id"`
+    DayOfWeek        int                     `json:"day_of_week"` // 0=Mon, 6=Sun
+    Title            string                  `json:"title"`
+    Description      string                  `json:"description"`
+    Type             string                  `json:"type"`
+    DistanceKm       float64                 `json:"distance_km"`
+    DurationSeconds  int                     `json:"duration_seconds"`
+    Notes            string                  `json:"notes"`
+    FromTemplateID   *int64                  `json:"from_template_id"`
+    Segments         []WeeklyTemplateSegment `json:"segments"`
+}
+
+type AssignWeeklyTemplateRequest struct {
+    StudentID int64  `json:"student_id"`
+    StartDate string `json:"start_date"` // YYYY-MM-DD, must be a Monday
+    Force     bool   `json:"force"`      // true = overwrite existing week
+}
+
+type AssignConflictResponse struct {
+    Error            string   `json:"error"`
+    ConflictingDates []string `json:"conflicting_dates"` // YYYY-MM-DD
+}
+```
+
+---
 
 ## API Endpoints
 
@@ -249,342 +438,497 @@ Workouts include a `segments` array in all responses (list, get, create, update)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Health check → `{ status: "ok" }` |
-| POST | /api/auth/google | Google login → `{ token, user }` |
+| `GET` | `/health` | Health check — returns `{"status":"ok"}` |
+| `POST` | `/api/auth/google` | Exchange Google credential for JWT |
 
-### User Profile (JWT required)
+#### `POST /api/auth/google`
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/me | Get authenticated user profile (includes `has_coach` field; if has_coach, also includes `coach_id`, `coach_name`, `coach_avatar`) |
-| PUT | /api/me | Update profile (name, sex, birth_date, weight_kg, height_cm, language). Note: `is_coach` is NOT settable here |
-| POST | /api/me/avatar | Upload custom avatar `{ image: string }` — base64 data URI, max 500KB |
-| DELETE | /api/me/avatar | Remove custom avatar (reverts to Google photo) |
+**Rate limited** (10/min/IP)
 
-### Coach Request (JWT required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/coach-request | Check coach request status → `{ status: "none" \| "pending" \| "approved" }` |
-| POST | /api/coach-request | Submit coach request `{ locality, level: string[] }` → creates notification for all admins |
-
-Coach activation flow:
-1. User submits request with locality and training levels (multiple allowed, e.g. ["beginner","advanced"])
-2. Levels stored as comma-separated string in `coach_level` column
-3. Notification sent to all admin users with approve/reject actions
-4. Admin approves → `is_coach = TRUE, coach_public = TRUE`, all other admin notifications for this request cleared
-5. Admin rejects → notifications cleared, user notified
-
-### Personal Workouts (JWT required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/workouts | List user's workouts (desc by date) |
-| GET | /api/workouts/{id} | Get workout (owner only) |
-| POST | /api/workouts | Create workout → 201 |
-| PUT | /api/workouts/{id} | Update workout (owner only) |
-| DELETE | /api/workouts/{id} | Delete workout (owner only) |
-
-
-### Coach - Students (JWT + is_coach required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/coach/students | List coach's students |
-| POST | /api/coach/students | Add student by email `{ email }` → 201 |
-| DELETE | /api/coach/students/{id} | Remove student |
-| GET | /api/coach/students/{id}/workouts | View student's personal workouts |
-
-### Coach - Daily Summary (JWT + is_coach required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/coach/daily-summary?date=YYYY-MM-DD | Returns all active students with their assigned workout for the given date |
-
-- `date` is required. Returns `400` if omitted or not a valid `YYYY-MM-DD` string.
-- Students without a workout that day have `assigned_workout: null`.
-- If a student has multiple workouts on the same day, returns the most recent by `created_at`.
-- Segments are loaded in a second pass (N+1, acceptable at this scale).
-
-Response shape:
+**Request:**
 ```json
-[
-  {
-    "student_id": 42,
-    "student_name": "María López",
-    "student_avatar": "...",
-    "assigned_workout": {
-      "id": 101, "title": "Intervals 5×1km", "type": "intervals",
-      "distance_km": 5.0, "duration_seconds": 1800,
-      "description": "...", "notes": "...", "status": "completed",
-      "due_date": "2026-03-16",
-      "result_time_seconds": 1710, "result_distance_km": 5.1,
-      "result_heart_rate": 172, "result_feeling": 8,
-      "segments": [...]
-    }
-  },
-  { "student_id": 55, "student_name": "Juan Pérez", "student_avatar": null, "assigned_workout": null }
-]
+{ "credential": "<google_id_token>" }
 ```
 
-Implementation: `GetDailySummary` in `handlers/coach_handler.go`. Uses `JOIN users` + `LEFT JOIN assigned_workouts` with dedup via `seen` map in Go.
-
-### Coach - Assigned Workouts (JWT + is_coach required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/coach/assigned-workouts | List assignments. Params: `?student_id=X&status=pending\|finished&page=N&limit=N`. Returns `{ data, total }` when paginated, or plain array |
-| GET | /api/coach/assigned-workouts/{id} | Get assignment with segments |
-| POST | /api/coach/assigned-workouts | Create assignment with segments + expected_fields |
-| PUT | /api/coach/assigned-workouts/{id} | Update (blocked if status=completed) |
-| DELETE | /api/coach/assigned-workouts/{id} | Delete assignment (blocked if completed; cascades segments) |
-
-### Athlete - Assigned Workouts (JWT required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/my-assigned-workouts | Get workouts assigned to me (asc by due_date) |
-| PUT | /api/my-assigned-workouts/{id}/status | Update status `{ status, result_time_seconds?, result_distance_km?, result_heart_rate?, result_feeling? }`. Feeling is always required for completion. Auto-creates workout record on completion. |
-
-### Invitations (JWT required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/invitations | List user's invitations (sent + received) |
-| POST | /api/invitations | Create invitation `{ type, receiver_id, message? }` |
-| GET | /api/invitations/{id} | Get invitation details |
-| PUT | /api/invitations/{id}/respond | Accept/reject `{ action: "accept" \| "reject" }` |
-| DELETE | /api/invitations/{id} | Cancel invitation (sender only, must be pending) |
-
-Invitation types: `coach_invite` (coach invites student), `student_request` (student requests coach).
-Accepting creates a coach_students record. Notifications sent on create, accept, reject.
-
-Invitation creation error codes (400/404):
-- `user_not_found` — receiver not found by ID or email
-- `cannot_invite_self` — sender and receiver are the same user
-- `not_a_coach` — sender is not a coach (for coach_invite type)
-- `receiver_not_coach` — receiver is not a public coach (for student_request type)
-- `invitation_already_pending` — a pending invitation already exists between these users
-- `already_connected` — an active coach_students relationship already exists
-- `student_max_coaches` — student already has the maximum number of coaches
-
-### Notifications (JWT required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/notifications | List notifications (paginated: `?page=N&limit=N`, default 20) |
-| GET | /api/notifications/unread-count | Unread count → `{ count }` |
-| PUT | /api/notifications/{id}/read | Mark single notification as read |
-| PUT | /api/notifications/read-all | Mark all as read |
-| POST | /api/notifications/{id}/action | Execute action `{ action: "approve" \| "reject" \| "accept" }` |
-| GET | /api/notification-preferences | Get notification preferences |
-| PUT | /api/notification-preferences | Update preferences `{ workout_assigned, workout_completed_or_skipped }` |
-
-Supported action types by notification type:
-- `invitation_received`: accept, reject (manages invitation lifecycle)
-- `coach_request`: approve, reject (manages coach activation)
-
-### Coach Directory (JWT required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/coaches | Paginated coach list. Params: `?search=X&locality=X&level=X&sort=rating\|name\|newest\|oldest&page=N&limit=N` → `{ data, total }`. Level filter uses `FIND_IN_SET` to match within comma-separated levels. |
-| GET | /api/coaches/{id} | Coach public profile (info + achievements + ratings) |
-
-### Coach Profile (JWT + is_coach required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| PUT | /api/coach/profile | Update description & public visibility |
-
-### Coach Achievements (JWT + is_coach required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/coach/achievements | List my achievements |
-| POST | /api/coach/achievements | Create achievement |
-| PUT | /api/coach/achievements/{id} | Edit achievement (blocked if verified) |
-| DELETE | /api/coach/achievements/{id} | Delete achievement |
-
-### Coach Ratings (JWT + student of that coach)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/coaches/{id}/ratings | Create/update rating (upsert via ON DUPLICATE KEY UPDATE) |
-| GET | /api/coaches/{id}/ratings | View coach ratings |
-
-### Coach-Student Relationship (JWT required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| PUT | /api/coach-students/{id}/end | End coaching relationship. Either coach or student can end it. |
-
-### Admin (JWT + is_admin required)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/admin/stats | Platform metrics (user/coach/rating/pending achievement counts) |
-| GET | /api/admin/users | List all users |
-| PUT | /api/admin/users/{id} | Update user roles (is_coach, is_admin) |
-| GET | /api/admin/achievements/pending | List unverified achievements |
-| PUT | /api/admin/achievements/{id}/verify | Approve achievement (notifies coach) |
-| PUT | /api/admin/achievements/{id}/reject | Delete rejected achievement |
-
-## Notification System
-
-Notifications use i18n keys for title and body, with metadata for interpolation. Backend stores keys like `notif_workout_assigned_title`, frontend translates using `t(key, { defaultValue: key, ...metadata })`.
-
-### Notification Types
-| Type | Title Key | Body Key | Metadata |
-|------|-----------|----------|----------|
-| invitation_received | notif_coach_invite_title / notif_student_request_title | notif_coach_invite_body / notif_student_request_body | sender_name, sender_avatar, invitation_id |
-| invitation_accepted | notif_invitation_accepted_title | notif_invitation_accepted_body | user_name, invitation_id |
-| invitation_rejected | notif_invitation_rejected_title | notif_invitation_rejected_body | user_name, invitation_id |
-| relationship_ended | notif_relationship_ended_title | notif_relationship_ended_body | user_name |
-| workout_assigned | notif_workout_assigned_title | notif_workout_assigned_body | coach_name, workout_title |
-| workout_completed | notif_workout_completed_title | notif_workout_completed_body | student_name, workout_title |
-| workout_skipped | notif_workout_skipped_title | notif_workout_skipped_body | student_name, workout_title |
-| coach_request | notif_coach_request_title | notif_coach_request_body | requester_id, requester_name, requester_avatar, locality, level |
-| coach_request_approved | notif_coach_request_approved_title | notif_coach_request_approved_body | requester_name |
-| coach_request_rejected | notif_coach_request_rejected_title | notif_coach_request_rejected_body | requester_name |
-| achievement_verified | notif_achievement_verified_title | notif_achievement_verified_body | event_name, achievement_id |
-
-## Models
-
-### User
-```go
-type User struct {
-    ID int64; GoogleID, Email, Name, AvatarURL, CustomAvatar string
-    Sex, BirthDate string; WeightKg float64; HeightCm int
-    Language string; IsCoach, IsAdmin bool
-    CoachDescription string; CoachPublic bool
-    CoachLocality, CoachLevel string  // CoachLevel: comma-separated, e.g. "beginner,advanced"
-    OnboardingCompleted bool
-    HasCoach bool       // Computed: true if user has active coach_students record as student
-    CoachID   int64     // omitempty; set when HasCoach=true
-    CoachName string    // omitempty; set when HasCoach=true
-    CoachAvatar string  // omitempty; set when HasCoach=true
+**Response 200:**
+```json
+{
+  "token": "<jwt>",
+  "user": { /* UserProfile */ }
 }
 ```
 
-### Workout
-```go
-type Workout struct {
-    ID, UserID int64
-    Date string; DistanceKm float64; DurationSeconds int
-    AvgPace string; Calories, AvgHeartRate int
-    Feeling *int; Type, Notes string
-    Segments []WorkoutSegment
+---
+
+### User Profile
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/me` | Get own profile |
+| `PUT` | `/api/me` | Update profile fields |
+| `POST` | `/api/me/avatar` | Upload custom avatar (multipart/form-data, field: `avatar`) |
+| `DELETE` | `/api/me/avatar` | Delete custom avatar |
+
+**UserProfile response fields:**
+`id, email, name, avatar_url, custom_avatar (base64), sex, birth_date, age (calculated), weight_kg, height_cm, language, is_coach, is_admin, coach_description, coach_public, onboarding_completed, has_coach, coach_id?, coach_name?, coach_avatar?`
+
+**PUT /api/me request:**
+```json
+{
+  "name": "string",
+  "sex": "M|F|other",
+  "birth_date": "YYYY-MM-DD",
+  "weight_kg": 0.0,
+  "height_cm": 0,
+  "language": "es|en",
+  "onboarding_completed": true
 }
 ```
 
-### AssignedWorkout
-```go
-type AssignedWorkout struct {
-    ID, CoachID, StudentID int64
-    Title, Description, Type, Notes string
-    DistanceKm float64; DurationSeconds int
-    ExpectedFields json.RawMessage
-    ResultTimeSeconds, ResultDistanceKm, ResultHeartRate, ResultFeeling *interface{}
-    Status, DueDate string
-    StudentName, CoachName string
-    Segments []WorkoutSegment
+---
+
+### Coach-Request (student connecting to a coach)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/coach-request` | Get current request status |
+| `POST` | `/api/coach-request` | Request a coach (student initiates) |
+
+---
+
+### Workouts (personal)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/workouts` | List own workouts |
+| `POST` | `/api/workouts` | Create workout |
+| `GET` | `/api/workouts/{id}` | Get workout |
+| `PUT` | `/api/workouts/{id}` | Update workout |
+| `DELETE` | `/api/workouts/{id}` | Delete workout |
+
+**CreateWorkoutRequest:**
+```json
+{
+  "date": "YYYY-MM-DD",
+  "distance_km": 0.0,
+  "duration_seconds": 0,
+  "avg_pace": "string",
+  "calories": 0,
+  "avg_heart_rate": 0,
+  "feeling": 0,
+  "type": "easy|tempo|intervals|long_run|race|fartlek|other",
+  "notes": "string",
+  "segments": [ /* SegmentRequest[] */ ]
 }
 ```
 
-### Invitation
-```go
-type Invitation struct {
-    ID int64; Type string  // coach_invite, student_request
-    SenderID, ReceiverID int64; Message string
-    Status string  // pending, accepted, rejected, cancelled
-    SenderName, SenderAvatar, ReceiverName, ReceiverAvatar string
+**SegmentRequest:**
+```json
+{
+  "segment_type": "simple|interval",
+  "repetitions": 1,
+  "value": 0.0,
+  "unit": "km|min|...",
+  "intensity": "easy|moderate|hard|...",
+  "work_value": 0.0, "work_unit": "", "work_intensity": "",
+  "rest_value": 0.0, "rest_unit": "", "rest_intensity": ""
 }
 ```
 
-### Notification
-```go
-type Notification struct {
-    ID, UserID int64; Type, Title, Body string
-    Metadata json.RawMessage; Actions json.RawMessage
-    IsRead bool; CreatedAt time.Time
-}
-type NotificationAction struct {
-    Key, Label, Style string  // style: primary, danger, default
+---
+
+### Coach — Students
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/coach/students` | List active students |
+| `GET` | `/api/coach/students/{studentId}/workouts` | Get student's assigned workouts |
+| `GET` | `/api/coach/daily-summary` | Today's summary for all students |
+| `PUT` | `/api/coach-students/{id}/end` | End a coach-student relationship |
+
+**GET /api/coach/daily-summary** response:
+```json
+[{
+  "student_id": 1,
+  "student_name": "string",
+  "student_avatar": "url|null",
+  "assigned_workout": { /* DailySummaryWorkout | null */ }
+}]
+```
+
+---
+
+### Coach — Assigned Workouts
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/coach/assigned-workouts` | List all assigned workouts (coach view) |
+| `POST` | `/api/coach/assigned-workouts` | Create assigned workout |
+| `GET` | `/api/coach/assigned-workouts/{id}` | Get single assigned workout |
+| `PUT` | `/api/coach/assigned-workouts/{id}` | Update assigned workout |
+| `DELETE` | `/api/coach/assigned-workouts/{id}` | Delete assigned workout |
+
+**CreateAssignedWorkoutRequest:**
+```json
+{
+  "student_id": 1,
+  "title": "string",
+  "description": "string",
+  "type": "string",
+  "distance_km": 0.0,
+  "duration_seconds": 0,
+  "notes": "string",
+  "expected_fields": ["result_time_seconds", "result_distance_km", "result_heart_rate", "result_feeling"],
+  "due_date": "YYYY-MM-DD",
+  "segments": [ /* SegmentRequest[] */ ]
 }
 ```
 
-### CoachListItem
-```go
-type CoachListItem struct {
-    ID int64; Name, AvatarURL, CoachDescription string
-    CoachLocality, CoachLevel string
-    AvgRating float64; RatingCount, VerifiedCount int
+---
+
+### Student — Assigned Workouts
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/my-assigned-workouts` | Get own assigned workouts |
+| `PUT` | `/api/my-assigned-workouts/{id}/status` | Submit workout result |
+
+**UpdateAssignedWorkoutStatusRequest:**
+```json
+{
+  "status": "completed|skipped",
+  "result_time_seconds": 0,
+  "result_distance_km": 0.0,
+  "result_heart_rate": 0,
+  "result_feeling": 0,
+  "image_file_id": null
 }
 ```
+
+---
+
+### Coach — Workout Templates (daily templates)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/coach/templates` | List workout templates |
+| `POST` | `/api/coach/templates` | Create template |
+| `GET` | `/api/coach/templates/{id}` | Get template |
+| `PUT` | `/api/coach/templates/{id}` | Update template |
+| `DELETE` | `/api/coach/templates/{id}` | Delete template |
+
+**WorkoutTemplate response:**
+```json
+{
+  "id": 1,
+  "coach_id": 1,
+  "title": "string",
+  "description": "string",
+  "type": "string",
+  "notes": "string",
+  "expected_fields": [],
+  "segments": [ /* TemplateSegment[] */ ],
+  "created_at": "",
+  "updated_at": ""
+}
+```
+
+---
+
+### Coach — Weekly Templates
+
+Weekly templates are 7-day workout schedules that can be assigned to students. Each day (0=Mon, 6=Sun) can have a workout defined.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/coach/weekly-templates` | List weekly templates |
+| `POST` | `/api/coach/weekly-templates` | Create weekly template |
+| `GET` | `/api/coach/weekly-templates/{id}` | Get weekly template (with days and segments) |
+| `PUT` | `/api/coach/weekly-templates/{id}` | Update name/description |
+| `PUT` | `/api/coach/weekly-templates/{id}/days` | Replace all days (full replacement) |
+| `POST` | `/api/coach/weekly-templates/{id}/assign` | Assign to a student |
+| `DELETE` | `/api/coach/weekly-templates/{id}` | Delete template |
+
+#### `POST /api/coach/weekly-templates/{id}/assign`
+
+**Request:**
+```json
+{
+  "student_id": 1,
+  "start_date": "YYYY-MM-DD",
+  "force": false
+}
+```
+
+- `start_date` must be a **Monday**
+- `force: false` — returns 409 if any day in that week already has an assigned workout for that student
+- `force: true` — deletes all assigned workouts for the student in that Mon–Sun range, then inserts new ones
+
+**Response 200:**
+```json
+{ "assigned_workout_ids": [1, 2, 3] }
+```
+
+**Response 409 (conflict, force=false):**
+```json
+{
+  "error": "conflict",
+  "conflicting_dates": ["2025-03-18", "2025-03-19"]
+}
+```
+
+---
+
+### Coach Profile
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `PUT` | `/api/coach/profile` | Update coach profile fields |
+
+**Request:**
+```json
+{
+  "coach_description": "string",
+  "coach_public": true
+}
+```
+
+---
+
+### Coaches Directory
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/coaches` | List public coaches (with optional `?search=...`) |
+| `GET` | `/api/coaches/{coachId}` | Get coach public profile |
+| `GET` | `/api/coaches/{coachId}/ratings` | Get ratings for a coach |
+| `POST` | `/api/coaches/{coachId}/ratings` | Create or update rating (student only) |
+
+**CoachListItem:**
+```json
+{
+  "id": 1, "name": "", "avatar_url": "",
+  "coach_description": "", "coach_locality": "", "coach_level": "",
+  "avg_rating": 4.5, "rating_count": 10, "verified_achievements": 3
+}
+```
+
+**UpsertRatingRequest:**
+```json
+{ "rating": 5, "comment": "string" }
+```
+
+---
+
+### Coach Achievements
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/coach/achievements` | List own achievements |
+| `POST` | `/api/coach/achievements` | Create achievement |
+| `PUT` | `/api/coach/achievements/{id}` | Update achievement |
+| `DELETE` | `/api/coach/achievements/{id}` | Delete achievement |
+| `PUT` | `/api/coach/achievements/{id}/visibility` | Toggle `is_public` |
+
+**CreateAchievementRequest:**
+```json
+{
+  "event_name": "string",
+  "event_date": "YYYY-MM-DD",
+  "distance_km": 42.2,
+  "result_time": "HH:MM:SS",
+  "position": 1,
+  "extra_info": "string",
+  "image_file_id": null
+}
+```
+
+---
+
+### Invitations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/invitations` | List own invitations |
+| `POST` | `/api/invitations` | Create invitation |
+| `GET` | `/api/invitations/{id}` | Get invitation |
+| `DELETE` | `/api/invitations/{id}` | Cancel invitation |
+| `PUT` | `/api/invitations/{id}/respond` | Accept or reject |
+
+**CreateInvitationRequest:**
+```json
+{
+  "type": "coach_invite|student_request",
+  "receiver_email": "string",
+  "receiver_id": 0,
+  "message": "string"
+}
+```
+
+**RespondInvitationRequest:**
+```json
+{ "action": "accept|reject" }
+```
+
+---
+
+### Notifications
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/notifications` | List notifications |
+| `GET` | `/api/notifications/unread-count` | Get unread count |
+| `PUT` | `/api/notifications/read-all` | Mark all as read |
+| `PUT` | `/api/notifications/{id}/read` | Mark one as read |
+| `POST` | `/api/notifications/{id}/action` | Execute a notification action |
+
+---
+
+### Notification Preferences
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/notification-preferences` | Get preferences |
+| `PUT` | `/api/notification-preferences` | Update preferences |
+
+**Request/Response:**
+```json
+{
+  "workout_assigned": true,
+  "workout_completed_or_skipped": true,
+  "assignment_message": true
+}
+```
+
+---
+
+### Files
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/files` | Upload a file (multipart/form-data, field: `file`) |
+| `GET` | `/api/files/{uuid}/download` | Download file by UUID |
+| `DELETE` | `/api/files/{uuid}` | Delete file |
+
+**Upload response:**
+```json
+{
+  "id": 1,
+  "uuid": "550e8400-e29b-41d4-a716-446655440000",
+  "original_name": "photo.jpg",
+  "content_type": "image/jpeg",
+  "size_bytes": 102400,
+  "url": "/api/files/550e8400.../download",
+  "created_at": "..."
+}
+```
+
+---
+
+### Assignment Messages
+
+Messages attached to a specific assigned workout, visible to both the coach and student.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/assignment-messages/{awId}` | List messages for an assigned workout |
+| `POST` | `/api/assignment-messages/{awId}` | Send a message |
+| `PUT` | `/api/assignment-messages/{awId}/read` | Mark messages as read |
+| `GET` | `/api/assigned-workout-detail/{awId}` | Get full workout detail with messages |
+
+**SendMessageRequest:**
+```json
+{ "body": "string" }
+```
+
+**Message response:**
+```json
+{
+  "id": 1,
+  "assigned_workout_id": 5,
+  "sender_id": 1,
+  "sender_name": "Coach Name",
+  "sender_avatar": "url",
+  "body": "string",
+  "is_read": false,
+  "created_at": "..."
+}
+```
+
+---
+
+### Admin
+
+All admin endpoints require `is_admin = true` on the authenticated user.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/admin/stats` | Platform statistics |
+| `GET` | `/api/admin/users` | List all users |
+| `PUT` | `/api/admin/users/{id}` | Update user (e.g. grant coach/admin) |
+| `GET` | `/api/admin/achievements/pending` | List unverified achievements |
+| `PUT` | `/api/admin/achievements/{id}/verify` | Verify achievement |
+| `PUT` | `/api/admin/achievements/{id}/reject` | Reject achievement with reason |
+
+---
+
+## Error Responses
+
+All errors return JSON:
+
+```json
+{ "error": "description" }
+```
+
+Common HTTP status codes:
+
+| Code | Meaning |
+|------|---------|
+| 400 | Bad request / validation error |
+| 401 | Missing or invalid JWT |
+| 403 | Forbidden (not a coach, not admin, wrong owner) |
+| 404 | Resource not found |
+| 409 | Conflict (e.g. duplicate, week already has workouts) |
+| 429 | Rate limit exceeded |
+| 500 | Internal server error |
+
+---
 
 ## Authentication Flow
 
-1. Frontend sends Google ID token to `POST /api/auth/google`
-2. Backend verifies via Google's `tokeninfo` endpoint
-3. User found or created in DB
-4. JWT generated (7-day expiration) with `user_id` and `email` claims
-5. All protected endpoints require `Authorization: Bearer <token>` header
+1. Client obtains a Google ID token via Google OAuth 2.0
+2. Client calls `POST /api/auth/google` with the token in `{ "credential": "..." }`
+3. Server verifies the token against `GOOGLE_CLIENT_ID`
+4. Server upserts the user in the `users` table (creates if new)
+5. Server returns a JWT (signed with `JWT_SECRET`, contains `user_id`)
+6. Client stores the JWT and sends it as `Authorization: Bearer <token>` on all subsequent requests
 
-## Middleware Chain
+---
 
-Request → CORS → Auth → Handler
+## Roles
 
-- **CORS**: Configurable via `ALLOWED_ORIGINS` env var (comma-separated). Defaults to `localhost:3000` and `localhost:5173`. Methods: GET/POST/PUT/DELETE/OPTIONS
-- **Auth**: Skips `/health` and `/api/auth/*`, validates JWT, injects user_id into context
+| Role | Flag | Capabilities |
+|------|------|-------------|
+| User | default | Manage own workouts, profile, invitations, notifications |
+| Student | has active `coach_students` row | Same as user + view assigned workouts, submit results, send messages |
+| Coach | `is_coach = true` | All of user + manage templates, weekly templates, assigned workouts, achievements |
+| Admin | `is_admin = true` | All of coach + admin panel |
 
-## Database Connection Pool
+---
 
-- Max open connections: 25
-- Max idle connections: 5
-- Connection lifetime: 5 minutes
+## Segment Structure Reference
 
-## Error Logging
+Segments represent structured workout intervals. A "simple" segment is a single block (e.g. "run 5km at easy pace"). An "interval" segment repeats a work+rest cycle N times.
 
-All handlers use centralized error logging:
+```
+Simple:  { segment_type: "simple", repetitions: 1, value: 5, unit: "km", intensity: "easy" }
+Interval: { segment_type: "interval", repetitions: 6,
+            work_value: 1, work_unit: "km", work_intensity: "hard",
+            rest_value: 2, rest_unit: "min", rest_intensity: "easy" }
+```
 
-- **`writeError(w, status, message)`**: Automatically logs 5xx errors with file:line via `runtime.Caller`. 4xx errors are not logged (expected client errors).
-- **`logErr(context, err)`**: Logs any non-nil error with file:line and a context string. Used for errors that are handled gracefully but need visibility (e.g., silent DB query failures, discarded scan errors).
-
-Both are defined in `workout_handler.go` and shared across all handlers. Format: `ERROR [file:line] context: error`.
-
-## Key Implementation Notes
-
-- Nullable DB fields use `sql.Null*` types (NullString, NullInt64, NullFloat64)
-- Coach mode requires admin approval — users submit request via `POST /api/coach-request` with locality and level(s)
-- Coach request sends `level` as a JSON array of strings; stored as comma-separated in DB
-- `is_coach` is NOT modifiable via profile update endpoint
-- Coach request creates notifications for ALL admin users; first admin to act resolves all
-- Completing an assignment auto-creates a workout record
-- `result_feeling` (1-10) is always required when completing an assignment
-- Personal workouts now support segments (`workout_segments` table, same structure as `assigned_workout_segments`). At least one segment is required on create/update
-- Templates also require at least one segment on create/update
-- Assigned workout listing supports `?status=pending|finished` filter and `?page=N&limit=N` pagination
-- Coach directory is paginated with search (name + description), locality, level (uses `FIND_IN_SET` for comma-separated matching), and sort (rating/name/newest/oldest) filters
-- `has_coach` is computed at login and profile fetch by checking `coach_students` for an active record as student
-- When `has_coach = true`, profile response includes `coach_id`, `coach_name`, `coach_avatar` (from `custom_avatar`)
-- `custom_avatar` stores base64 data URI (max 500KB). Used in all avatar fields across coaches, invitations, and notifications instead of `avatar_url`
-- Approving a coach request sets both `is_coach = TRUE` and `coach_public = TRUE`
-- Notification titles and bodies are i18n keys; metadata provides interpolation values
-- Notification actions (approve/reject) are resolved inline via `POST /api/notifications/{id}/action`
-- Invitation system: coach_invite and student_request types, with transactional accept using `SELECT FOR UPDATE`
-- MaxCoachesPerStudent constant limits concurrent coaching relationships
-- `truncateDate()` helper for MySQL DATE with `parseTime=true`
-- Segments are deleted and re-created on workout update (DELETE + INSERT)
-- `due_date` represents "training day" (not a deadline)
-- Achievement edit is blocked if `is_verified = true`
-- Rating upsert uses `ON DUPLICATE KEY UPDATE` on (coach_id, student_id) unique constraint
-
-## Deployment
-
-- **Platform:** Railway (Go API + MySQL)
-- **Branch:** `master` (auto-deploy)
-- **Build:** `go build -o main .`
-- **Start:** `./main`
-- Railway injects `PORT` env var automatically
-- MySQL provided as Railway add-on service
+The same segment shape is used across:
+- `workout_segments` (personal workouts)
+- `workout_template_segments` (daily templates)
+- `weekly_template_day_segments` (weekly templates)
+- `assigned_workout_segments` (assigned workouts)

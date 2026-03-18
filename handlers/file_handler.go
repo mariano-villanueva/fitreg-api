@@ -1,15 +1,15 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
-	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/services"
 )
@@ -20,6 +20,47 @@ var allowedContentTypes = map[string]string{
 	"image/jpeg": ".jpg",
 	"image/png":  ".png",
 	"image/webp": ".webp",
+}
+
+// Magic byte signatures for allowed image types.
+// We read the first 12 bytes of the file to detect the real content type,
+// preventing content-type spoofing attacks (e.g. an executable named .jpg).
+var magicSignatures = []struct {
+	mime   string
+	offset int
+	magic  []byte
+}{
+	{"image/jpeg", 0, []byte{0xFF, 0xD8, 0xFF}},
+	{"image/png", 0, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}},
+	// WebP: "RIFF" at byte 0, "WEBP" at byte 8
+	{"image/webp", 0, []byte{0x52, 0x49, 0x46, 0x46}},
+}
+
+// detectMagicType reads the first 12 bytes of r and returns the matching MIME type,
+// along with a new reader that includes the already-read bytes prepended.
+func detectMagicType(r io.Reader) (string, io.Reader, error) {
+	header := make([]byte, 12)
+	n, err := io.ReadFull(r, header)
+	header = header[:n]
+	combined := io.MultiReader(bytes.NewReader(header), r)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		return "", combined, err
+	}
+	for _, sig := range magicSignatures {
+		if len(header) < sig.offset+len(sig.magic) {
+			continue
+		}
+		if bytes.Equal(header[sig.offset:sig.offset+len(sig.magic)], sig.magic) {
+			// Extra check for WebP: bytes 8-11 must be "WEBP"
+			if sig.mime == "image/webp" {
+				if len(header) < 12 || !bytes.Equal(header[8:12], []byte("WEBP")) {
+					continue
+				}
+			}
+			return sig.mime, combined, nil
+		}
+	}
+	return "", combined, nil
 }
 
 type FileHandler struct {
@@ -61,12 +102,23 @@ func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify magic bytes — the Content-Type header is client-controlled and can be spoofed.
+	detectedType, fileWithHeader, err := detectMagicType(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Could not read file content")
+		return
+	}
+	if detectedType != contentType {
+		writeError(w, http.StatusBadRequest, "File content does not match the declared type")
+		return
+	}
+
 	uuid := generateUUID()
 	storageKey := "files/" + uuid + ext
 
-	f, err := h.svc.Upload(r.Context(), uuid, storageKey, file, contentType, header.Filename, header.Size, userID)
+	f, err := h.svc.Upload(r.Context(), uuid, storageKey, fileWithHeader, contentType, header.Filename, header.Size, userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to upload file")
+		handleServiceErr(w, err, "FileHandler.Upload", apperr.FILE_001, "Failed to upload file")
 		return
 	}
 	writeJSON(w, http.StatusCreated, f)
@@ -86,13 +138,9 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType, reader, err := h.svc.Download(r.Context(), uuid)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "File not found")
-		return
-	}
+	contentType, reader, err := h.svc.Download(r.Context(), uuid, userID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "File not found in storage")
+		handleServiceErr(w, err, "FileHandler.Download", apperr.FILE_002, "Failed to download file")
 		return
 	}
 	defer reader.Close()
@@ -119,16 +167,8 @@ func (h *FileHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := h.svc.Delete(r.Context(), uuid, userID)
-	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "File not found")
-		return
-	}
-	if errors.Is(err, services.ErrForbidden) {
-		writeError(w, http.StatusForbidden, "Not authorized to delete this file")
-		return
-	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to delete file")
+		handleServiceErr(w, err, "FileHandler.Delete", apperr.FILE_003, "Failed to delete file")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "file deleted"})

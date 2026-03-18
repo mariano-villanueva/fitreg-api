@@ -20,6 +20,10 @@ type FileRepository interface {
 	GetByUUID(uuid string) (models.File, error)
 	GetOwnerAndKey(uuid string) (userID int64, storageKey string, err error)
 	Delete(uuid string) error
+	// CanAccess returns true if userID is allowed to download the file identified by uuid.
+	// Access is granted to: the file owner, admins, coaches of the associated assigned workout,
+	// and any authenticated user for publicly visible achievement images.
+	CanAccess(uuid string, userID int64) (bool, error)
 }
 
 // UserRepository handles all user-related database operations.
@@ -52,6 +56,19 @@ type TemplateRepository interface {
 	GetSegments(templateID int64) ([]models.TemplateSegment, error)
 	ReplaceSegments(templateID int64, segs []models.SegmentRequest) error
 	GetCoachID(id int64) (int64, error)
+}
+
+// WeeklyTemplateRepository handles CRUD and assignment for weekly workout templates.
+type WeeklyTemplateRepository interface {
+	Create(coachID int64, req models.CreateWeeklyTemplateRequest) (int64, error)
+	GetByID(id int64) (models.WeeklyTemplate, error)
+	List(coachID int64) ([]models.WeeklyTemplate, error)
+	UpdateMeta(id, coachID int64, req models.UpdateWeeklyTemplateRequest) error
+	Delete(id, coachID int64) (bool, error)
+	PutDays(templateID int64, days []models.WeeklyTemplateDayRequest) error
+	// Assign checks for conflicts and creates assigned_workouts in one transaction.
+	// Returns assigned IDs on success, conflicting dates (YYYY-MM-DD) on 409.
+	Assign(templateID, coachID int64, req models.AssignWeeklyTemplateRequest) ([]int64, []string, error)
 }
 
 // CoachProfileRepository handles all coach profile-related database operations.

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/services"
 )
@@ -22,11 +23,7 @@ func (h *AdminHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	stats, err := h.svc.GetStats(userID)
 	if err != nil {
-		if err == services.ErrForbidden {
-			writeError(w, http.StatusForbidden, "Admin access required")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch stats")
+		handleServiceErr(w, err, "AdminHandler.GetStats", apperr.ADMIN_001, "Failed to fetch stats")
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
@@ -37,6 +34,9 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	// Parse query params
 	search := r.URL.Query().Get("search")
+	if len(search) > 100 {
+		search = search[:100]
+	}
 	role := r.URL.Query().Get("role")
 	sortCol := r.URL.Query().Get("sort")
 	sortOrder := r.URL.Query().Get("order")
@@ -67,11 +67,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	offset := (page - 1) * limit
 	users, total, err := h.svc.ListUsers(userID, search, role, sortCol, sortOrder, limit, offset)
 	if err != nil {
-		if err == services.ErrForbidden {
-			writeError(w, http.StatusForbidden, "Admin access required")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch users")
+		handleServiceErr(w, err, "AdminHandler.ListUsers", apperr.ADMIN_002, "Failed to fetch users")
 		return
 	}
 
@@ -102,11 +98,7 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.UpdateUser(userID, targetID, req.IsCoach, req.IsAdmin); err != nil {
-		if err == services.ErrForbidden {
-			writeError(w, http.StatusForbidden, "Admin access required")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to update user")
+		handleServiceErr(w, err, "AdminHandler.UpdateUser", apperr.ADMIN_003, "Failed to update user")
 		return
 	}
 
@@ -117,11 +109,7 @@ func (h *AdminHandler) PendingAchievements(w http.ResponseWriter, r *http.Reques
 	userID := middleware.UserIDFromContext(r.Context())
 	achievements, err := h.svc.ListPendingAchievements(userID)
 	if err != nil {
-		if err == services.ErrForbidden {
-			writeError(w, http.StatusForbidden, "Admin access required")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to fetch achievements")
+		handleServiceErr(w, err, "AdminHandler.PendingAchievements", apperr.ADMIN_004, "Failed to fetch achievements")
 		return
 	}
 	writeJSON(w, http.StatusOK, achievements)
@@ -138,15 +126,7 @@ func (h *AdminHandler) VerifyAchievement(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.svc.VerifyAchievement(achID, userID); err != nil {
-		if err == services.ErrForbidden {
-			writeError(w, http.StatusForbidden, "Admin access required")
-			return
-		}
-		if err == services.ErrNotFound {
-			writeError(w, http.StatusNotFound, "Achievement not found or already verified")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to verify achievement")
+		handleServiceErr(w, err, "AdminHandler.VerifyAchievement", apperr.ADMIN_005, "Failed to verify achievement")
 		return
 	}
 
@@ -172,15 +152,7 @@ func (h *AdminHandler) RejectAchievement(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.svc.RejectAchievement(achID, userID, req.Reason); err != nil {
-		if err == services.ErrForbidden {
-			writeError(w, http.StatusForbidden, "Admin access required")
-			return
-		}
-		if err == services.ErrNotFound {
-			writeError(w, http.StatusNotFound, "Achievement not found or already processed")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "Failed to reject achievement")
+		handleServiceErr(w, err, "AdminHandler.RejectAchievement", apperr.ADMIN_006, "Failed to reject achievement")
 		return
 	}
 

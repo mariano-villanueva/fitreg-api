@@ -3,10 +3,15 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 
 	"github.com/fitreg/api/models"
 )
+
+// ErrStatusConflict is returned when an assigned workout cannot be transitioned
+// because it is already in a terminal state (completed or skipped).
+var ErrStatusConflict = errors.New("workout already finalized")
 
 type coachRepository struct {
 	db *sql.DB
@@ -170,9 +175,11 @@ func (r *coachRepository) ListAssignedWorkouts(coachID int64, studentID int64, s
 	workouts := []models.AssignedWorkout{}
 	for rows.Next() {
 		var aw models.AssignedWorkout
-		var description, notes, dueDate, expectedFields sql.NullString
-		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+		var description, notes, dueDate, expectedFields, workoutType sql.NullString
+		var distanceKm sql.NullFloat64
+		var durationSeconds sql.NullInt64
+		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
+			&distanceKm, &durationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 			&aw.ImageFileID, &aw.Status, &dueDate,
 			&aw.CreatedAt, &aw.UpdatedAt, &aw.StudentName, &aw.UnreadMessageCount); err != nil {
@@ -189,6 +196,15 @@ func (r *coachRepository) ListAssignedWorkouts(coachID int64, studentID int64, s
 		}
 		if expectedFields.Valid {
 			aw.ExpectedFields = json.RawMessage(expectedFields.String)
+		}
+		if workoutType.Valid {
+			aw.Type = workoutType.String
+		}
+		if distanceKm.Valid {
+			aw.DistanceKm = distanceKm.Float64
+		}
+		if durationSeconds.Valid {
+			aw.DurationSeconds = int(durationSeconds.Int64)
 		}
 		workouts = append(workouts, aw)
 	}
@@ -254,7 +270,9 @@ func (r *coachRepository) CreateAssignedWorkout(coachID int64, req models.Create
 
 func (r *coachRepository) GetAssignedWorkout(awID, coachID int64) (models.AssignedWorkout, error) {
 	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields sql.NullString
+	var description, notes, dueDate, expectedFields, workoutType sql.NullString
+	var distanceKm sql.NullFloat64
+	var durationSeconds sql.NullInt64
 	var studentName string
 	err := r.db.QueryRow(`
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
@@ -265,13 +283,22 @@ func (r *coachRepository) GetAssignedWorkout(awID, coachID int64) (models.Assign
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
 		WHERE aw.id = ? AND aw.coach_id = ?
-	`, awID, coachID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+	`, awID, coachID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
+		&distanceKm, &durationSeconds, &notes, &expectedFields,
 		&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 		&aw.ImageFileID, &aw.Status, &dueDate,
 		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
 	if err != nil {
 		return models.AssignedWorkout{}, err
+	}
+	if workoutType.Valid {
+		aw.Type = workoutType.String
+	}
+	if distanceKm.Valid {
+		aw.DistanceKm = distanceKm.Float64
+	}
+	if durationSeconds.Valid {
+		aw.DurationSeconds = int(durationSeconds.Int64)
 	}
 	if description.Valid {
 		aw.Description = description.String
@@ -316,13 +343,16 @@ func (r *coachRepository) UpdateAssignedWorkout(awID, coachID int64, req models.
 		log.Printf("marshal expected fields for update: %v", err)
 	}
 
-	_, err = r.db.Exec(`
+	result, err := r.db.Exec(`
 		UPDATE assigned_workouts
 		SET title = ?, description = ?, type = ?, distance_km = ?, duration_seconds = ?, notes = ?, expected_fields = ?, due_date = ?, updated_at = NOW()
 		WHERE id = ? AND coach_id = ?
 	`, req.Title, req.Description, req.Type, req.DistanceKm, req.DurationSeconds, req.Notes, efJSON, dueDateVal, awID, coachID)
 	if err != nil {
 		return models.AssignedWorkout{}, err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return models.AssignedWorkout{}, sql.ErrNoRows
 	}
 
 	// Replace segments: delete old, insert new
@@ -343,7 +373,9 @@ func (r *coachRepository) UpdateAssignedWorkout(awID, coachID int64, req models.
 
 	// Return updated workout (fetch by ID without coach_id filter for the SELECT back)
 	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields sql.NullString
+	var description, notes, dueDate, expectedFields, workoutType2 sql.NullString
+	var distanceKm2 sql.NullFloat64
+	var durationSeconds2 sql.NullInt64
 	var studentName string
 	err = r.db.QueryRow(`
 		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
@@ -354,13 +386,22 @@ func (r *coachRepository) UpdateAssignedWorkout(awID, coachID int64, req models.
 		FROM assigned_workouts aw
 		JOIN users u ON u.id = aw.student_id
 		WHERE aw.id = ?
-	`, awID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-		&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+	`, awID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType2,
+		&distanceKm2, &durationSeconds2, &notes, &expectedFields,
 		&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 		&aw.ImageFileID, &aw.Status, &dueDate,
 		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
 	if err != nil {
 		return models.AssignedWorkout{}, err
+	}
+	if workoutType2.Valid {
+		aw.Type = workoutType2.String
+	}
+	if distanceKm2.Valid {
+		aw.DistanceKm = distanceKm2.Float64
+	}
+	if durationSeconds2.Valid {
+		aw.DurationSeconds = int(durationSeconds2.Int64)
 	}
 	if description.Valid {
 		aw.Description = description.String
@@ -429,9 +470,11 @@ func (r *coachRepository) GetMyAssignedWorkouts(studentID int64, startDate, endD
 	workouts := []models.AssignedWorkout{}
 	for rows.Next() {
 		var aw models.AssignedWorkout
-		var description, notes, dueDate, expectedFields sql.NullString
-		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &aw.Type,
-			&aw.DistanceKm, &aw.DurationSeconds, &notes, &expectedFields,
+		var description, notes, dueDate, expectedFields, workoutType sql.NullString
+		var distanceKm sql.NullFloat64
+		var durationSeconds sql.NullInt64
+		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
+			&distanceKm, &durationSeconds, &notes, &expectedFields,
 			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
 			&aw.ImageFileID, &aw.Status, &dueDate,
 			&aw.CreatedAt, &aw.UpdatedAt, &aw.CoachName, &aw.UnreadMessageCount); err != nil {
@@ -449,6 +492,15 @@ func (r *coachRepository) GetMyAssignedWorkouts(studentID int64, startDate, endD
 		if expectedFields.Valid {
 			aw.ExpectedFields = json.RawMessage(expectedFields.String)
 		}
+		if workoutType.Valid {
+			aw.Type = workoutType.String
+		}
+		if distanceKm.Valid {
+			aw.DistanceKm = distanceKm.Float64
+		}
+		if durationSeconds.Valid {
+			aw.DurationSeconds = int(durationSeconds.Int64)
+		}
 		workouts = append(workouts, aw)
 	}
 
@@ -465,10 +517,13 @@ func (r *coachRepository) GetMyAssignedWorkouts(studentID int64, startDate, endD
 }
 
 func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) (coachID int64, workoutTitle string, err error) {
+	// Only allow transitioning from 'pending' — this enforces the state machine
+	// atomically and prevents race conditions with concurrent completion requests.
 	result, err := r.db.Exec(`
 		UPDATE assigned_workouts SET status = ?,
 			result_time_seconds = ?, result_distance_km = ?, result_heart_rate = ?, result_feeling = ?,
-			image_file_id = ?, updated_at = NOW() WHERE id = ? AND student_id = ?
+			image_file_id = ?, updated_at = NOW()
+		WHERE id = ? AND student_id = ? AND status = 'pending'
 	`, req.Status, req.ResultTimeSeconds, req.ResultDistanceKm, req.ResultHeartRate, req.ResultFeeling, req.ImageFileID, awID, studentID)
 	if err != nil {
 		return 0, "", err
@@ -479,7 +534,15 @@ func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req
 		log.Printf("get rows affected for update status: %v", err)
 	}
 	if rowsAffected == 0 {
-		return 0, "", sql.ErrNoRows
+		// Distinguish: does the record exist at all, or is it already in a terminal state?
+		var exists int
+		checkErr := r.db.QueryRow(
+			"SELECT 1 FROM assigned_workouts WHERE id = ? AND student_id = ?", awID, studentID,
+		).Scan(&exists)
+		if checkErr == sql.ErrNoRows {
+			return 0, "", sql.ErrNoRows
+		}
+		return 0, "", ErrStatusConflict
 	}
 
 	// If completed, create a workout record for the athlete
@@ -509,22 +572,23 @@ func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req
 			avgHR = *req.ResultHeartRate
 		}
 
-		workoutDate := "CURDATE()"
-		dateArg := interface{}(nil)
-		if aw.DueDate.Valid {
-			workoutDate = "?"
-			dateArg = truncateDate(aw.DueDate.String)
-		}
-
 		var notes interface{}
 		if aw.Notes.Valid {
 			notes = aw.Notes.String
 		}
 
-		if _, err := r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
-			VALUES (?, `+workoutDate+`, ?, ?, ?, ?, ?, NOW(), NOW())`,
-			studentID, dateArg, finalDistance, finalDuration, avgHR, aw.Type, notes); err != nil {
-			log.Printf("insert workout from completed assignment: %v", err)
+		var insertErr error
+		if aw.DueDate.Valid {
+			_, insertErr = r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+				studentID, truncateDate(aw.DueDate.String), finalDistance, finalDuration, avgHR, aw.Type, notes)
+		} else {
+			_, insertErr = r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
+				VALUES (?, CURDATE(), ?, ?, ?, ?, ?, NOW(), NOW())`,
+				studentID, finalDistance, finalDuration, avgHR, aw.Type, notes)
+		}
+		if insertErr != nil {
+			log.Printf("insert workout from completed assignment: %v", insertErr)
 		}
 	}
 
