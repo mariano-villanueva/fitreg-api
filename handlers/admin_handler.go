@@ -8,14 +8,13 @@ import (
 
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
-	"github.com/fitreg/api/services"
 )
 
 type AdminHandler struct {
-	svc *services.AdminService
+	svc AdminServicer
 }
 
-func NewAdminHandler(svc *services.AdminService) *AdminHandler {
+func NewAdminHandler(svc AdminServicer) *AdminHandler {
 	return &AdminHandler{svc: svc}
 }
 

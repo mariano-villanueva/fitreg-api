@@ -7,14 +7,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type TemplateHandler struct {
-	svc *services.TemplateService
+	svc TemplateServicer
 }
 
-func NewTemplateHandler(svc *services.TemplateService) *TemplateHandler {
+func NewTemplateHandler(svc TemplateServicer) *TemplateHandler {
 	return &TemplateHandler{svc: svc}
 }
 

@@ -10,14 +10,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type CoachHandler struct {
-	svc *services.CoachService
+	svc CoachServicer
 }
 
-func NewCoachHandler(svc *services.CoachService) *CoachHandler {
+func NewCoachHandler(svc CoachServicer) *CoachHandler {
 	return &CoachHandler{svc: svc}
 }
 

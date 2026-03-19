@@ -13,11 +13,11 @@ import (
 
 // WeeklyTemplateHandler handles /api/coach/weekly-templates endpoints.
 type WeeklyTemplateHandler struct {
-	svc *services.WeeklyTemplateService
+	svc WeeklyTemplateServicer
 }
 
 // NewWeeklyTemplateHandler creates a new WeeklyTemplateHandler.
-func NewWeeklyTemplateHandler(svc *services.WeeklyTemplateService) *WeeklyTemplateHandler {
+func NewWeeklyTemplateHandler(svc WeeklyTemplateServicer) *WeeklyTemplateHandler {
 	return &WeeklyTemplateHandler{svc: svc}
 }
 

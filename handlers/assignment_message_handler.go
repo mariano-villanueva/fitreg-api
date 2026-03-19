@@ -9,14 +9,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type AssignmentMessageHandler struct {
-	svc *services.AssignmentMessageService
+	svc AssignmentMessageServicer
 }
 
-func NewAssignmentMessageHandler(svc *services.AssignmentMessageService) *AssignmentMessageHandler {
+func NewAssignmentMessageHandler(svc AssignmentMessageServicer) *AssignmentMessageHandler {
 	return &AssignmentMessageHandler{svc: svc}
 }
 

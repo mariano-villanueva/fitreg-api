@@ -5,14 +5,13 @@ import (
 	"net/http"
 
 	"github.com/fitreg/api/apperr"
-	"github.com/fitreg/api/services"
 )
 
 type AuthHandler struct {
-	svc *services.AuthService
+	svc AuthServicer
 }
 
-func NewAuthHandler(svc *services.AuthService) *AuthHandler {
+func NewAuthHandler(svc AuthServicer) *AuthHandler {
 	return &AuthHandler{svc: svc}
 }
 

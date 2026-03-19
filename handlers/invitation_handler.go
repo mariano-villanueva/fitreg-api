@@ -9,14 +9,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type InvitationHandler struct {
-	svc *services.InvitationService
+	svc InvitationServicer
 }
 
-func NewInvitationHandler(svc *services.InvitationService) *InvitationHandler {
+func NewInvitationHandler(svc InvitationServicer) *InvitationHandler {
 	return &InvitationHandler{svc: svc}
 }
 

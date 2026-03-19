@@ -7,14 +7,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type WorkoutHandler struct {
-	svc *services.WorkoutService
+	svc WorkoutServicer
 }
 
-func NewWorkoutHandler(svc *services.WorkoutService) *WorkoutHandler {
+func NewWorkoutHandler(svc WorkoutServicer) *WorkoutHandler {
 	return &WorkoutHandler{svc: svc}
 }
 

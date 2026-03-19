@@ -8,14 +8,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type CoachProfileHandler struct {
-	svc *services.CoachProfileService
+	svc CoachProfileServicer
 }
 
-func NewCoachProfileHandler(svc *services.CoachProfileService) *CoachProfileHandler {
+func NewCoachProfileHandler(svc CoachProfileServicer) *CoachProfileHandler {
 	return &CoachProfileHandler{svc: svc}
 }
 
