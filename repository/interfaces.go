@@ -165,6 +165,7 @@ type CoachRepository interface {
 	GetUserName(id int64) (string, error)
 	FetchSegments(awID int64) []models.WorkoutSegment
 	GetFileUUID(fileID int64) (string, error)
+	GetWeeklyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error)
 }
 
 // AssignmentMessageRepository handles assignment message and assigned workout detail operations.

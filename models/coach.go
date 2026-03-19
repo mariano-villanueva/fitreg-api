@@ -224,3 +224,16 @@ type DailySummaryItem struct {
 	StudentAvatar *string              `json:"student_avatar"`
 	Workout       *DailySummaryWorkout `json:"assigned_workout"`
 }
+
+// WeeklyLoadEntry represents the training load for a single week.
+type WeeklyLoadEntry struct {
+	WeekStart           string  `json:"week_start"`            // YYYY-MM-DD (Monday)
+	PlannedKm           float64 `json:"planned_km"`
+	ActualKm            float64 `json:"actual_km"`
+	PlannedSeconds      int     `json:"planned_seconds"`
+	ActualSeconds       int     `json:"actual_seconds"`
+	SessionsPlanned     int     `json:"sessions_planned"`
+	SessionsCompleted   int     `json:"sessions_completed"`
+	SessionsSkipped     int     `json:"sessions_skipped"`
+	HasPersonalWorkouts bool    `json:"has_personal_workouts"`
+}

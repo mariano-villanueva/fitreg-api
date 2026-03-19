@@ -189,3 +189,18 @@ func (s *CoachService) GetDailySummary(coachID int64, date string) ([]models.Dai
 	}
 	return s.repo.GetDailySummary(coachID, date)
 }
+
+func (s *CoachService) GetStudentLoad(coachID, studentID int64, weeks int) ([]models.WeeklyLoadEntry, error) {
+	ok, err := s.repo.IsStudentOf(coachID, studentID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrForbidden
+	}
+	return s.repo.GetWeeklyLoad(studentID, weeks)
+}
+
+func (s *CoachService) GetMyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error) {
+	return s.repo.GetWeeklyLoad(studentID, weeks)
+}
