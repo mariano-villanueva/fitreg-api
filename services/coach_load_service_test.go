@@ -53,7 +53,7 @@ func (s *stubCoachRepo) GetMyAssignedWorkouts(studentID int64, startDate, endDat
 func (s *stubCoachRepo) UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) (int64, string, error) {
 	return 0, "", nil
 }
-func (s *stubCoachRepo) GetDailySummary(coachID int64, date string) ([]models.DailySummaryItem, error) {
+func (s *stubCoachRepo) GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error) {
 	return nil, nil
 }
 func (s *stubCoachRepo) GetUserName(id int64) (string, error)          { return "", nil }

@@ -59,7 +59,7 @@ func (m *mockCoachService) GetMyAssignedWorkouts(studentID int64, startDate, end
 func (m *mockCoachService) UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) error {
 	return m.updateAssignedWorkoutStatusFn(awID, studentID, req)
 }
-func (m *mockCoachService) GetDailySummary(coachID int64, date string) ([]models.DailySummaryItem, error) {
+func (m *mockCoachService) GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error) {
 	return m.getDailySummaryFn(coachID, date)
 }
 func (m *mockCoachService) GetStudentLoad(coachID, studentID int64, weeks int) ([]models.WeeklyLoadEntry, error) {

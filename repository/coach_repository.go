@@ -600,7 +600,7 @@ func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req
 	return coachID, workoutTitle, nil
 }
 
-func (r *coachRepository) GetDailySummary(coachID int64, date string) ([]models.DailySummaryItem, error) {
+func (r *coachRepository) GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error) {
 	rows, err := r.db.Query(`
 		SELECT
 			u.id, u.name,
@@ -699,10 +699,12 @@ func (r *coachRepository) GetDailySummary(coachID int64, date string) ([]models.
 		items = append(items, item)
 	}
 
-	// Load segments for all workouts
-	for i, item := range items {
-		if item.Workout != nil {
-			items[i].Workout.Segments = r.FetchSegments(item.Workout.ID)
+	// Load segments for all workouts (skip for callers that don't need them, e.g. compliance dashboard)
+	if includeSegments {
+		for i, item := range items {
+			if item.Workout != nil {
+				items[i].Workout.Segments = r.FetchSegments(item.Workout.ID)
+			}
 		}
 	}
 
