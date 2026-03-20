@@ -932,3 +932,36 @@ The same segment shape is used across:
 - `workout_template_segments` (daily templates)
 - `weekly_template_day_segments` (weekly templates)
 - `assigned_workout_segments` (assigned workouts)
+
+---
+
+## Testing
+
+### Handler Tests
+
+All handlers are tested in `package handlers` (same package, not `_test` suffix) to allow full access to unexported helpers.
+
+**Pattern:** Each handler test file defines a `mockXService` struct with function fields, one per interface method. Tests instantiate the mock with only the functions needed for each case.
+
+```go
+type mockWorkoutService struct {
+    listFn   func(userID int64) ([]models.Workout, error)
+    createFn func(userID int64, req models.CreateWorkoutRequest) (models.Workout, error)
+    // ...
+}
+```
+
+**Testability approach:**
+- All handlers depend on interfaces (defined in `handlers/interfaces.go`), not concrete `*services.X` types.
+- `middleware.WithUserID(ctx, userID)` injects a user ID into the request context for tests (exported helper in `middleware/auth.go`).
+
+**Run:**
+```bash
+go test ./handlers/... -cover
+```
+
+Current coverage: ~77% of statements across all 14 handler files.
+
+### Service Tests
+
+_(pending)_

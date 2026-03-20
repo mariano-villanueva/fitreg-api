@@ -116,6 +116,14 @@ func New(
 			}
 			return
 		}
+		if strings.HasSuffix(r.URL.Path, "/load") {
+			if r.Method == http.MethodGet {
+				coach.GetStudentLoad(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
 		http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 	})
 
@@ -215,6 +223,15 @@ func New(
 		case http.MethodDelete:
 			coach.DeleteAssignedWorkout(w, r)
 		default:
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Athlete training load route
+	mux.HandleFunc("/api/me/load", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			coach.GetMyLoad(w, r)
+		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
 	})

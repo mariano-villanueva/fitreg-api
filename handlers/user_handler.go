@@ -10,15 +10,14 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type UserHandler struct {
-	svc      *services.UserService
-	notifSvc *services.NotificationService
+	svc      UserServicer
+	notifSvc NotificationCreator
 }
 
-func NewUserHandler(svc *services.UserService, notifSvc *services.NotificationService) *UserHandler {
+func NewUserHandler(svc UserServicer, notifSvc NotificationCreator) *UserHandler {
 	return &UserHandler{svc: svc, notifSvc: notifSvc}
 }
 

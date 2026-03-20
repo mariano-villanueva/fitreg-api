@@ -8,14 +8,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type AchievementHandler struct {
-	svc *services.AchievementService
+	svc AchievementServicer
 }
 
-func NewAchievementHandler(svc *services.AchievementService) *AchievementHandler {
+func NewAchievementHandler(svc AchievementServicer) *AchievementHandler {
 	return &AchievementHandler{svc: svc}
 }
 

@@ -11,7 +11,6 @@ import (
 
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
-	"github.com/fitreg/api/services"
 )
 
 const maxFileSize = 5 << 20 // 5MB
@@ -64,10 +63,10 @@ func detectMagicType(r io.Reader) (string, io.Reader, error) {
 }
 
 type FileHandler struct {
-	svc *services.FileService
+	svc FileServicer
 }
 
-func NewFileHandler(svc *services.FileService) *FileHandler {
+func NewFileHandler(svc FileServicer) *FileHandler {
 	return &FileHandler{svc: svc}
 }
 

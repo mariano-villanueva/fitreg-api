@@ -12,10 +12,10 @@ import (
 )
 
 type RatingHandler struct {
-	svc *services.RatingService
+	svc RatingServicer
 }
 
-func NewRatingHandler(svc *services.RatingService) *RatingHandler {
+func NewRatingHandler(svc RatingServicer) *RatingHandler {
 	return &RatingHandler{svc: svc}
 }
 

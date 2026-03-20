@@ -9,14 +9,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type NotificationHandler struct {
-	svc *services.NotificationService
+	svc NotificationServicer
 }
 
-func NewNotificationHandler(svc *services.NotificationService) *NotificationHandler {
+func NewNotificationHandler(svc NotificationServicer) *NotificationHandler {
 	return &NotificationHandler{svc: svc}
 }
 

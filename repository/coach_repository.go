@@ -748,3 +748,47 @@ func (r *coachRepository) GetFileUUID(fileID int64) (string, error) {
 	err := r.db.QueryRow("SELECT uuid FROM files WHERE id = ?", fileID).Scan(&uuid)
 	return uuid, err
 }
+
+func (r *coachRepository) GetWeeklyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error) {
+	rows, err := r.db.Query(`
+		SELECT
+			DATE_SUB(due_date, INTERVAL WEEKDAY(due_date) DAY)    AS week_start,
+			COALESCE(SUM(distance_km), 0)                          AS planned_km,
+			COALESCE(SUM(CASE WHEN status = 'completed' THEN COALESCE(result_distance_km, distance_km) ELSE 0 END), 0) AS actual_km,
+			COALESCE(SUM(duration_seconds), 0)                     AS planned_seconds,
+			COALESCE(SUM(CASE WHEN status = 'completed' THEN COALESCE(result_time_seconds, duration_seconds) ELSE 0 END), 0) AS actual_seconds,
+			COUNT(*)                                                AS sessions_planned,
+			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)  AS sessions_completed,
+			SUM(CASE WHEN status = 'skipped'   THEN 1 ELSE 0 END)  AS sessions_skipped,
+			EXISTS (
+				SELECT 1 FROM workouts w
+				WHERE w.user_id = ?
+				  AND DATE_SUB(w.date, INTERVAL WEEKDAY(w.date) DAY) =
+				      DATE_SUB(aw.due_date, INTERVAL WEEKDAY(aw.due_date) DAY)
+			) AS has_personal_workouts
+		FROM assigned_workouts aw
+		WHERE aw.student_id = ?
+		  AND aw.due_date >= DATE_SUB(CURDATE(), INTERVAL ? WEEK)
+		GROUP BY week_start
+		ORDER BY week_start DESC
+	`, studentID, studentID, weeks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries := []models.WeeklyLoadEntry{}
+	for rows.Next() {
+		var e models.WeeklyLoadEntry
+		if err := rows.Scan(
+			&e.WeekStart, &e.PlannedKm, &e.ActualKm,
+			&e.PlannedSeconds, &e.ActualSeconds,
+			&e.SessionsPlanned, &e.SessionsCompleted, &e.SessionsSkipped,
+			&e.HasPersonalWorkouts,
+		); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}

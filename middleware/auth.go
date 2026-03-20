@@ -75,3 +75,9 @@ func UserIDFromContext(ctx context.Context) int64 {
 	userID, _ := ctx.Value(userIDKey).(int64)
 	return userID
 }
+
+// WithUserID returns a copy of ctx with the given userID injected.
+// Intended for use in tests only.
+func WithUserID(ctx context.Context, userID int64) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
+}

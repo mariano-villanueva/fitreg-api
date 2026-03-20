@@ -10,14 +10,13 @@ import (
 	"github.com/fitreg/api/apperr"
 	"github.com/fitreg/api/middleware"
 	"github.com/fitreg/api/models"
-	"github.com/fitreg/api/services"
 )
 
 type CoachHandler struct {
-	svc *services.CoachService
+	svc CoachServicer
 }
 
-func NewCoachHandler(svc *services.CoachService) *CoachHandler {
+func NewCoachHandler(svc CoachServicer) *CoachHandler {
 	return &CoachHandler{svc: svc}
 }
 
@@ -346,4 +345,63 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, items)
+}
+
+// GetStudentLoad handles GET /api/coach/students/{id}/load?weeks=N
+func (h *CoachHandler) GetStudentLoad(w http.ResponseWriter, r *http.Request) {
+	coachID := middleware.UserIDFromContext(r.Context())
+	if coachID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	// Extract student ID from path: /api/coach/students/{id}/load
+	path := strings.TrimPrefix(r.URL.Path, "/api/coach/students/")
+	path = strings.TrimSuffix(path, "/load")
+	studentID, err := strconv.ParseInt(path, 10, 64)
+	if err != nil || studentID == 0 {
+		writeError(w, http.StatusBadRequest, "Invalid student ID")
+		return
+	}
+
+	weeks := parseWeeksParam(r, 8)
+
+	load, err := h.svc.GetStudentLoad(coachID, studentID, weeks)
+	if err != nil {
+		handleServiceErr(w, err, "CoachHandler.GetStudentLoad", apperr.COACH_012, "Failed to fetch student load")
+		return
+	}
+	writeJSON(w, http.StatusOK, load)
+}
+
+// GetMyLoad handles GET /api/me/load?weeks=N
+func (h *CoachHandler) GetMyLoad(w http.ResponseWriter, r *http.Request) {
+	studentID := middleware.UserIDFromContext(r.Context())
+	if studentID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	weeks := parseWeeksParam(r, 8)
+
+	load, err := h.svc.GetMyLoad(studentID, weeks)
+	if err != nil {
+		handleServiceErr(w, err, "CoachHandler.GetMyLoad", apperr.COACH_013, "Failed to fetch training load")
+		return
+	}
+	writeJSON(w, http.StatusOK, load)
+}
+
+// parseWeeksParam reads the ?weeks= query param, defaulting to defaultVal and capping at 52.
+func parseWeeksParam(r *http.Request, defaultVal int) int {
+	weeks := defaultVal
+	if w := r.URL.Query().Get("weeks"); w != "" {
+		if n, err := strconv.Atoi(w); err == nil && n > 0 {
+			weeks = n
+		}
+	}
+	if weeks > 52 {
+		weeks = 52
+	}
+	return weeks
 }
