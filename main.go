@@ -26,45 +26,52 @@ func main() {
 			config.Load,
 			dbprovider.New,
 			storage.New,
-			// Workout domain
+			// Repositories
 			repository.NewWorkoutRepository,
-			services.NewWorkoutService,
-			// File domain
 			repository.NewFileRepository,
-			services.NewFileService,
-			// Auth + User domain (shared UserRepository)
 			repository.NewUserRepository,
-			services.NewAuthService,
-			services.NewUserService,
-			// Template domain
 			repository.NewTemplateRepository,
-			services.NewTemplateService,
-			// CoachProfile domain
 			repository.NewCoachProfileRepository,
-			services.NewCoachProfileService,
-			// Rating domain
 			repository.NewRatingRepository,
-			services.NewRatingService,
-			// Notification domain
 			repository.NewNotificationRepository,
 			repository.NewInvitationRepository,
-			services.NewNotificationService,
-			services.NewInvitationService,
-			// Achievement domain (Task 3)
 			repository.NewAchievementRepository,
-			services.NewAchievementService,
-			// AssignmentMessage domain (Task 4)
 			repository.NewAssignmentMessageRepository,
-			services.NewAssignmentMessageService,
-			// Coach domain (Task 5)
 			repository.NewCoachRepository,
-			services.NewCoachService,
-			// Admin domain (Task 6)
 			repository.NewAdminRepository,
-			services.NewAdminService,
-			// Weekly template domain
 			repository.NewWeeklyTemplateRepository,
-			services.NewWeeklyTemplateService,
+			// Services — annotated so fx resolves interface deps in handlers
+			fx.Annotate(services.NewWorkoutService,
+				fx.As(new(handlers.WorkoutServicer))),
+			fx.Annotate(services.NewFileService,
+				fx.As(new(handlers.FileServicer))),
+			fx.Annotate(services.NewAuthService,
+				fx.As(new(handlers.AuthServicer))),
+			fx.Annotate(services.NewUserService,
+				fx.As(new(handlers.UserServicer))),
+			fx.Annotate(services.NewTemplateService,
+				fx.As(new(handlers.TemplateServicer))),
+			fx.Annotate(services.NewCoachProfileService,
+				fx.As(new(handlers.CoachProfileServicer))),
+			fx.Annotate(services.NewRatingService,
+				fx.As(new(handlers.RatingServicer))),
+			// NotificationService: keep concrete type (used by other services)
+			// and also expose as handler interfaces via wrappers
+			services.NewNotificationService,
+			func(s *services.NotificationService) handlers.NotificationServicer { return s },
+			func(s *services.NotificationService) handlers.NotificationCreator { return s },
+			fx.Annotate(services.NewInvitationService,
+				fx.As(new(handlers.InvitationServicer))),
+			fx.Annotate(services.NewAchievementService,
+				fx.As(new(handlers.AchievementServicer))),
+			fx.Annotate(services.NewAssignmentMessageService,
+				fx.As(new(handlers.AssignmentMessageServicer))),
+			fx.Annotate(services.NewCoachService,
+				fx.As(new(handlers.CoachServicer))),
+			fx.Annotate(services.NewAdminService,
+				fx.As(new(handlers.AdminServicer))),
+			fx.Annotate(services.NewWeeklyTemplateService,
+				fx.As(new(handlers.WeeklyTemplateServicer))),
 			// Handlers
 			handlers.NewAuthHandler,
 			handlers.NewWorkoutHandler,
