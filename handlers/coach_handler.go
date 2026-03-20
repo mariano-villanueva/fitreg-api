@@ -338,7 +338,8 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := h.svc.GetDailySummary(userID, date)
+	includeSegments := r.URL.Query().Get("segments") != "false"
+	items, err := h.svc.GetDailySummary(userID, date, includeSegments)
 	if err != nil {
 		handleServiceErr(w, err, "CoachHandler.GetDailySummary", apperr.COACH_011, "Failed to fetch daily summary")
 		return

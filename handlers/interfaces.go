@@ -48,7 +48,7 @@ type CoachServicer interface {
 	DeleteAssignedWorkout(awID, coachID int64) error
 	GetMyAssignedWorkouts(studentID int64, startDate, endDate string) ([]models.AssignedWorkout, error)
 	UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) error
-	GetDailySummary(coachID int64, date string) ([]models.DailySummaryItem, error)
+	GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error)
 	GetStudentLoad(coachID, studentID int64, weeks int) ([]models.WeeklyLoadEntry, error)
 	GetMyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error)
 }

@@ -161,7 +161,7 @@ type CoachRepository interface {
 	DeleteAssignedWorkout(awID, coachID int64) error
 	GetMyAssignedWorkouts(studentID int64, startDate, endDate string) ([]models.AssignedWorkout, error)
 	UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) (coachID int64, workoutTitle string, err error)
-	GetDailySummary(coachID int64, date string) ([]models.DailySummaryItem, error)
+	GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error)
 	GetUserName(id int64) (string, error)
 	FetchSegments(awID int64) []models.WorkoutSegment
 	GetFileUUID(fileID int64) (string, error)

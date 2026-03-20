@@ -179,7 +179,7 @@ func (s *CoachService) UpdateAssignedWorkoutStatus(awID, studentID int64, req mo
 	return nil
 }
 
-func (s *CoachService) GetDailySummary(coachID int64, date string) ([]models.DailySummaryItem, error) {
+func (s *CoachService) GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error) {
 	isCoach, err := s.repo.IsCoach(coachID)
 	if err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ func (s *CoachService) GetDailySummary(coachID int64, date string) ([]models.Dai
 	if !isCoach {
 		return nil, ErrNotCoach
 	}
-	return s.repo.GetDailySummary(coachID, date)
+	return s.repo.GetDailySummary(coachID, date, includeSegments)
 }
 
 func (s *CoachService) GetStudentLoad(coachID, studentID int64, weeks int) ([]models.WeeklyLoadEntry, error) {
