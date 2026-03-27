@@ -178,6 +178,11 @@ func (s *AuthService) linkPendingInvitations(userID int64, email string) {
 		return
 	}
 	for _, inv := range invitations {
+		// Link this invitation to the new user so it appears in their received list
+		if err := s.invRepo.SetReceiver(inv.ID, userID); err != nil {
+			log.Printf("ERROR linking invitation %d to user %d: %v", inv.ID, userID, err)
+			continue
+		}
 		senderName, senderAvatar, _ := s.repo.GetNameAndAvatar(inv.SenderID)
 		meta := map[string]interface{}{
 			"invitation_id": inv.ID,

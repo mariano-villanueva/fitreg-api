@@ -299,3 +299,11 @@ func (r *invitationRepository) FindPendingByEmail(email string) ([]models.Invita
 	}
 	return invitations, rows.Err()
 }
+
+func (r *invitationRepository) SetReceiver(invID, userID int64) error {
+	_, err := r.db.Exec(
+		"UPDATE invitations SET receiver_id = ?, receiver_email = NULL, updated_at = NOW() WHERE id = ? AND receiver_id IS NULL",
+		userID, invID,
+	)
+	return err
+}

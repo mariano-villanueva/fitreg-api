@@ -134,6 +134,7 @@ type InvitationRepository interface {
 	FindByToken(token string) (models.Invitation, error)
 	RedeemToken(token string, userID int64) error
 	FindPendingByEmail(email string) ([]models.Invitation, error)
+	SetReceiver(invID, userID int64) error
 }
 
 // AchievementRepository handles all coach achievement database operations.
