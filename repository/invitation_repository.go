@@ -223,7 +223,7 @@ func (r *invitationRepository) List(userID int64, status, direction string, limi
 		}
 		invitations = append(invitations, inv)
 	}
-	return invitations, nil
+	return invitations, rows.Err()
 }
 
 func (r *invitationRepository) Cancel(invID int64) error {
@@ -281,7 +281,7 @@ func (r *invitationRepository) RedeemToken(token string, userID int64) error {
 
 func (r *invitationRepository) FindPendingByEmail(email string) ([]models.Invitation, error) {
 	rows, err := r.db.Query(
-		"SELECT id FROM invitations WHERE receiver_email = ? AND status = 'pending'",
+		"SELECT id, sender_id FROM invitations WHERE receiver_email = ? AND status = 'pending'",
 		email,
 	)
 	if err != nil {
@@ -292,10 +292,10 @@ func (r *invitationRepository) FindPendingByEmail(email string) ([]models.Invita
 	var invitations []models.Invitation
 	for rows.Next() {
 		var inv models.Invitation
-		if err := rows.Scan(&inv.ID); err != nil {
+		if err := rows.Scan(&inv.ID, &inv.SenderID); err != nil {
 			continue
 		}
 		invitations = append(invitations, inv)
 	}
-	return invitations, nil
+	return invitations, rows.Err()
 }
