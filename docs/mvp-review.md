@@ -1,6 +1,6 @@
 # FitReg — MVP Review & Demo Strategy
 
-_Última actualización: 2026-03-19 (sesión 2)_
+_Última actualización: 2026-03-27 (sesión 3)_
 
 ## Contexto
 
@@ -57,7 +57,7 @@ _Última actualización: 2026-03-19 (sesión 2)_
 
 | Feature | Nota |
 |---------|------|
-| Duplicar plantilla semanal | Hoy hay que crearlas de cero. Un coach tiene 3–4 semanas tipo que rota. |
+| ~~Duplicar plantilla semanal~~ | ✅ **Implementado** — botón "Duplicar" en cada card, precarga el form de nueva plantilla. |
 | Campo pace/ritmo objetivo por segmento | `intensity` es string libre hoy. Un campo "5:30/km" sería más preciso para running. Workaround posible con notes. |
 | ~~Historial de km del alumno~~ | ✅ **Implementado** como `TrainingLoadChart` — ver más abajo. |
 
@@ -69,8 +69,8 @@ _Última actualización: 2026-03-19 (sesión 2)_
 
 ### Pulido necesario antes de la demo
 
-- **Onboarding del alumno**: tiene que ser claro y rápido. Si el coach manda un link y tarda 5 minutos conectarse, se pierde.
-- **Estado vacío**: la primera vez que el coach entra sin alumnos/templates, tiene que guiarlo a crear algo, no mostrar pantallas vacías.
+- ~~**Onboarding del alumno**~~: ✅ **Implementado** — form en 2 pasos con texto explicativo y precarga del nombre de Google.
+- ~~**Estado vacío**~~: ✅ **Implementado** — panel "Primeros pasos" en dashboard + cards guiadas en todas las secciones vacías.
 
 ---
 
@@ -81,6 +81,55 @@ _Última actualización: 2026-03-19 (sesión 2)_
 **B) Demo + 2 features clave** ← _recomendada_ — Agregar vista semanal del alumno + dashboard de cumplimiento del coach. Son las dos features con mayor "aha moment" para alguien que hoy usa Excel.
 
 **C) MVP real para primeros usuarios** — Lo anterior + historial de volumen + duplicar plantillas + pulido de onboarding. Suficiente para que el coach lo use con alumnos reales desde el día 1.
+
+---
+
+---
+
+## Bugs conocidos
+
+| Bug | Descripción | Prioridad |
+|-----|-------------|-----------|
+| **Timezone en prod** | La semana empieza el martes cerca de la medianoche — los días se calculan en un timezone local en vez de UTC. Auditar backend: toda fecha/hora debe guardarse y calcularse en UTC. Frontend: mostrar en el timezone del usuario (usar `Intl` o `date-fns-tz`). | Alta |
+
+---
+
+## Deuda técnica
+
+| Item | Descripción |
+|------|-------------|
+| **Unificar Workout y AssignedWorkout** | Hoy un alumno puede logear entrenamientos propios (`Workout`) y recibir entrenamientos del coach (`AssignedWorkout`). Son estructuras separadas. La idea: un entreno propio del alumno es conceptualmente un "assigned" de sí mismo. Unificar simplifca el modelo de datos, el historial y los gráficos de carga. Cambio de backend con migración. |
+| **Google Cloud Storage** | Configurar GCS para almacenar fotos de resultados y futura media. Hoy no hay storage real — las fotos quedan en base64 o sin persistencia real. Requiere: crear bucket, configurar credenciales de servicio, endpoint de upload firmado. |
+| **Infraestructura de emails** | Necesario para: invitaciones de coach a alumno, notificaciones de actividad, referidos. Opciones: SendGrid, Resend, AWS SES. El backend ya tiene el concepto de invitación pero no envía emails reales. |
+
+---
+
+## Ideas a explorar (backlog)
+
+### Bolsa de alumnos (coaches buscan alumnos sin coach)
+El flujo actual es unidireccional: el coach invita al alumno por email. Esta idea agrega el lado inverso: alumnos registrados que no tienen coach pueden activar un opt-in ("quiero que coaches me encuentren") y aparecer en un listado filtrable para coaches.
+- Requiere: campo `open_to_coaches` en el perfil del alumno, endpoint de búsqueda con filtros básicos (zona, disciplina), y lógica de contacto (el coach envía solicitud, el alumno acepta).
+- Es el inverso exacto del directorio de coaches que ya existe.
+- **Prioridad:** baja hasta tener base de usuarios.
+
+### Referidos
+Dos variantes con motivaciones distintas:
+
+**Alumno refiere a su coach** — el alumno comparte un link que lleva al coach a registrarse. El coach llega con credibilidad ya establecida (su alumno lo usa). El link puede pre-cargar la relación automáticamente. Es el CTA más concreto para la página de pricing: *"tu coach ya está en FitReg, unite acá"*. Canal de adquisición orgánico con alta conversión esperada.
+
+**Coach refiere a otro coach** — menos claro el incentivo sin modelo de comisión o descuento. Podría tener sentido en comunidades de entrenadores (coach de running refiere a uno de trail). Requiere programa de beneficios para ser atractivo.
+
+- **Prioridad:** referido de alumno → medio (alto ROI, bajo costo). Coach → baja.
+
+### Página comercial / demo de features
+Landing page aspiracional para coaches, separada de la app. Objetivo: convencer a un coach de probar FitReg antes de registrarse. Contenido tipo:
+- *"Asigná semanas completas de trabajo con un clic"*
+- *"Controlá la carga semanal de cada alumno en tiempo real"*
+- *"Analizá el progreso y la adherencia al plan"*
+- CTA: "Probá gratis con hasta 5 alumnos"
+
+No es una página dentro de la app — es una URL pública (fitreg.app o similar) con diseño más comercial. Podría ser una SPA estática separada o una ruta pública del FE actual.
+- **Prioridad:** media — necesaria antes de cualquier esfuerzo de adquisición real.
 
 ---
 
@@ -121,11 +170,26 @@ _Precios en ARS/USD a definir._
 
 ## Plan de iteración (sin deadline)
 
-- [x] Vista semanal del alumno — WeeklyStrip en AthleteHome (puntos × 7 días, card expandida, modal inline)
-- [ ] Dashboard de cumplimiento del coach (semana actual/anterior)
-- [ ] Duplicar plantilla semanal
-- [ ] Pulido de onboarding del alumno
-- [ ] Estados vacíos con guía de primeros pasos
-- [ ] Página de Pricing (planes Free/Starter/Pro/Elite, precios ARS + USD, sin tarjeta para Free)
+### Bugs / infraestructura
+- [ ] **Fix timezone** — auditar backend (todo en UTC), ajustar frontend al timezone del usuario
+- [ ] **Google Cloud Storage** — configurar bucket, credenciales, endpoint de upload firmado
+- [ ] **Infraestructura de emails** — elegir proveedor (Resend / SendGrid), integrar envío de invitaciones reales
+
+### Features core
+- [x] Vista semanal del alumno — WeeklyStrip en AthleteHome
+- [x] Dashboard de cumplimiento del coach — WeeklyComplianceDashboard
+- [x] Duplicar plantilla semanal
+- [x] Pulido de onboarding del alumno — form en 2 pasos
+- [x] Estados vacíos con guía de primeros pasos — panel + cards guiadas
+- [ ] **Unificar Workout y AssignedWorkout** — entreno propio del alumno = self-assigned
+- [ ] **Invitaciones reales por email** — depende de infraestructura de emails
+
+### Adquisición / comercial
+- [ ] Página comercial / demo de features (landing aspiracional para coaches)
+- [ ] Página de Pricing (planes Free/Starter/Pro/Elite, precios ARS + USD)
+- [ ] Referido alumno → coach ("tu coach ya está en FitReg")
+
+### Preparación para prod
 - [ ] Datos mock para la demo
 - [ ] Limpieza de DB para onboarding real en prod
+- [ ] Bolsa de alumnos (opt-in "quiero que coaches me encuentren") — baja prioridad
