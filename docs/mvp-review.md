@@ -170,26 +170,29 @@ _Precios en ARS/USD a definir._
 
 ## Plan de iteración (sin deadline)
 
-### Bugs / infraestructura
+### Etapa 1 — Bugs e infraestructura (bloqueantes)
 - [ ] **Fix timezone** — auditar backend (todo en UTC), ajustar frontend al timezone del usuario
 - [ ] **Google Cloud Storage** — configurar bucket, credenciales, endpoint de upload firmado
 - [ ] **Infraestructura de emails** — elegir proveedor (Resend / SendGrid), integrar envío de invitaciones reales
 
-### Features core
+### Etapa 2 — Features core
 - [x] Vista semanal del alumno — WeeklyStrip en AthleteHome
 - [x] Dashboard de cumplimiento del coach — WeeklyComplianceDashboard
 - [x] Duplicar plantilla semanal
 - [x] Pulido de onboarding del alumno — form en 2 pasos
 - [x] Estados vacíos con guía de primeros pasos — panel + cards guiadas
 - [ ] **Unificar Workout y AssignedWorkout** — entreno propio del alumno = self-assigned
-- [ ] **Invitaciones reales por email** — depende de infraestructura de emails
+- [ ] **Invitaciones reales por email** — depende de etapa 1
 
-### Adquisición / comercial
+### Etapa 3 — Preparación para la demo
+- [ ] Datos mock para la demo
+- [ ] Limpieza de DB para onboarding real en prod
+
+### Etapa 4 — Adquisición / comercial
 - [ ] Página comercial / demo de features (landing aspiracional para coaches)
 - [ ] Página de Pricing (planes Free/Starter/Pro/Elite, precios ARS + USD)
 - [ ] Referido alumno → coach ("tu coach ya está en FitReg")
 
-### Preparación para prod
-- [ ] Datos mock para la demo
-- [ ] Limpieza de DB para onboarding real en prod
-- [ ] Bolsa de alumnos (opt-in "quiero que coaches me encuentren") — baja prioridad
+### Etapa 5 — Growth (requiere base de usuarios)
+- [ ] Bolsa de alumnos (opt-in "quiero que coaches me encuentren")
+- [ ] Referido coach → coach
