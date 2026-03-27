@@ -21,6 +21,10 @@ type Config struct {
 	S3SecretKey      string
 	S3Endpoint       string
 	LocalStoragePath string
+	// Email
+	ResendAPIKey string
+	AppURL       string
+	EmailFrom    string
 }
 
 func Load() *Config {
@@ -40,6 +44,9 @@ func Load() *Config {
 		S3SecretKey:      getEnv("AWS_SECRET_ACCESS_KEY", ""),
 		S3Endpoint:       getEnv("S3_ENDPOINT", ""),
 		LocalStoragePath: getEnv("LOCAL_STORAGE_PATH", "./uploads"),
+		ResendAPIKey:     getEnv("RESEND_API_KEY", ""),
+		AppURL:           getEnv("APP_URL", "http://localhost:5173"),
+		EmailFrom:        getEnv("EMAIL_FROM", "noreply@fitreg.app"),
 	}
 }
 

@@ -40,6 +40,8 @@ func main() {
 			repository.NewCoachRepository,
 			repository.NewAdminRepository,
 			repository.NewWeeklyTemplateRepository,
+			// Email
+			services.NewEmailService,
 			// Services — annotated so fx resolves interface deps in handlers
 			fx.Annotate(services.NewWorkoutService,
 				fx.As(new(handlers.WorkoutServicer))),
