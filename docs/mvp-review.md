@@ -1,6 +1,6 @@
 # FitReg — MVP Review & Demo Strategy
 
-_Última actualización: 2026-03-19_
+_Última actualización: 2026-03-19 (sesión 2)_
 
 ## Contexto
 
@@ -59,7 +59,7 @@ _Última actualización: 2026-03-19_
 |---------|------|
 | Duplicar plantilla semanal | Hoy hay que crearlas de cero. Un coach tiene 3–4 semanas tipo que rota. |
 | Campo pace/ritmo objetivo por segmento | `intensity` es string libre hoy. Un campo "5:30/km" sería más preciso para running. Workaround posible con notes. |
-| Historial de km del alumno | Últimas 4 semanas de volumen. Simple pero poderoso para mostrar progreso. |
+| ~~Historial de km del alumno~~ | ✅ **Implementado** como `TrainingLoadChart` — ver más abajo. |
 
 ### Fuera del scope del MVP (no mostrar en demo)
 
@@ -84,13 +84,48 @@ _Última actualización: 2026-03-19_
 
 ---
 
+## Implementado en sesiones anteriores
+
+- [x] **Carga semanal** — `TrainingLoadChart` reutilizable (coach + alumno)
+  - Backend: `/coach/students/:id/load` y `/me/load` con parámetro `weeks` (4/8/12)
+  - Barra única por semana: fondo gris = planificado, relleno coloreado = completado
+  - Umbrales de color: rojo <50%, naranja 50–80%, verde >80%
+  - Hover con tooltip: km, %, sesiones completadas/omitidas/sin marcar, flag de workouts personales
+  - Etiquetas de rango semanal ("Feb 16–22", "Feb 23–Mar 1")
+  - Vista coach: en `StudentWorkouts` arriba del calendario mensual
+  - Vista alumno: en `AthleteHome`
+
+---
+
+## Modelo de negocio
+
+- Cobrar al coach (no al alumno). El coach tiene el dolor real y la disposición a pagar.
+- Planes por cantidad de alumnos activos (no por alumno variable — genera ansiedad y penaliza a los coaches con más alumnos).
+- Infra actual: ~$50 USD/mes. Con 3–4 coaches en Starter se cubre.
+- Precios en ARS y USD (target: coaches argentinos + internacionales).
+- Pago: integración futura con MercadoPago (y posiblemente Stripe para internacionales).
+- Estrategia de lanzamiento: primeros 3–5 coaches con 6 meses gratis a cambio de feedback real.
+
+### Planes
+
+| Plan | Límite alumnos | Notas |
+|------|---------------|-------|
+| **Free** | Hasta 5 | Sin tarjeta requerida (a confirmar con integración de pago) |
+| **Starter** | Hasta 20 | — |
+| **Pro** | Hasta 40 | — |
+| **Elite** | Ilimitado | — |
+
+_Precios en ARS/USD a definir._
+
+---
+
 ## Plan de iteración (sin deadline)
 
-- [ ] Vista semanal del alumno (calendario lunes–domingo)
+- [x] Vista semanal del alumno — WeeklyStrip en AthleteHome (puntos × 7 días, card expandida, modal inline)
 - [ ] Dashboard de cumplimiento del coach (semana actual/anterior)
-- [ ] Resumen de volumen semanal (km/horas)
 - [ ] Duplicar plantilla semanal
 - [ ] Pulido de onboarding del alumno
 - [ ] Estados vacíos con guía de primeros pasos
+- [ ] Página de Pricing (planes Free/Starter/Pro/Elite, precios ARS + USD, sin tarjeta para Free)
 - [ ] Datos mock para la demo
 - [ ] Limpieza de DB para onboarding real en prod
