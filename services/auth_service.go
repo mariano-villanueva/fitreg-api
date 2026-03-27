@@ -33,14 +33,23 @@ type AuthResponse struct {
 // AuthService contains business logic for authentication.
 type AuthService struct {
 	repo           repository.UserRepository
+	invRepo        repository.InvitationRepository
+	notifSvc       *NotificationService
 	googleClientID string
 	jwtSecret      string
 }
 
 // NewAuthService constructs an AuthService.
-func NewAuthService(repo repository.UserRepository, cfg *config.Config) *AuthService {
+func NewAuthService(
+	repo repository.UserRepository,
+	invRepo repository.InvitationRepository,
+	notifSvc *NotificationService,
+	cfg *config.Config,
+) *AuthService {
 	return &AuthService{
 		repo:           repo,
+		invRepo:        invRepo,
+		notifSvc:       notifSvc,
 		googleClientID: cfg.GoogleClientID,
 		jwtSecret:      cfg.JWTSecret,
 	}
@@ -143,6 +152,9 @@ func (s *AuthService) findOrCreateUser(tokenInfo *GoogleTokenInfo) (*models.User
 		return nil, err
 	}
 
+	// Link any pending invitations sent to this email
+	s.linkPendingInvitations(id, tokenInfo.Email)
+
 	u := rowToUserProfile(row)
 	return &u, nil
 }
@@ -157,4 +169,28 @@ func (s *AuthService) generateJWT(userID int64, email string) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.jwtSecret))
+}
+
+func (s *AuthService) linkPendingInvitations(userID int64, email string) {
+	invitations, err := s.invRepo.FindPendingByEmail(email)
+	if err != nil {
+		log.Printf("ERROR finding pending invitations for %s: %v", email, err)
+		return
+	}
+	for _, inv := range invitations {
+		senderName, senderAvatar, _ := s.repo.GetNameAndAvatar(inv.SenderID)
+		meta := map[string]interface{}{
+			"invitation_id": inv.ID,
+			"sender_id":     inv.SenderID,
+			"sender_name":   senderName,
+			"sender_avatar": senderAvatar,
+		}
+		actions := []models.NotificationAction{
+			{Key: "accept", Label: "invitation_accept", Style: "primary"},
+			{Key: "reject", Label: "invitation_reject", Style: "danger"},
+		}
+		if err := s.notifSvc.Create(userID, "invitation_received", "notif_coach_invite_title", "notif_coach_invite_body", meta, actions); err != nil {
+			log.Printf("ERROR creating invitation notification for user %d: %v", userID, err)
+		}
+	}
 }
