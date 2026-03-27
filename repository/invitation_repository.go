@@ -168,24 +168,24 @@ func (r *invitationRepository) Create(senderID, receiverID int64, invType, messa
 func (r *invitationRepository) GetByID(id int64) (models.Invitation, error) {
 	var inv models.Invitation
 	err := r.db.QueryRow(`
-        SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
+        SELECT i.id, i.type, i.sender_id, COALESCE(i.receiver_id, 0), COALESCE(i.receiver_email, ''), COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
             COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
         FROM invitations i
         JOIN users s ON s.id = i.sender_id
-        JOIN users rv ON rv.id = i.receiver_id
+        LEFT JOIN users rv ON rv.id = i.receiver_id
         WHERE i.id = ?
-    `, id).Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
+    `, id).Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.ReceiverEmail, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
 		&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar)
 	return inv, err
 }
 
 func (r *invitationRepository) List(userID int64, status, direction string, limit, offset int) ([]models.Invitation, error) {
 	query := `
-        SELECT i.id, i.type, i.sender_id, i.receiver_id, COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
+        SELECT i.id, i.type, i.sender_id, COALESCE(i.receiver_id, 0), COALESCE(i.receiver_email, ''), COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
             COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), COALESCE(rv.name, ''), COALESCE(rv.custom_avatar, '')
         FROM invitations i
         JOIN users s ON s.id = i.sender_id
-        JOIN users rv ON rv.id = i.receiver_id
+        LEFT JOIN users rv ON rv.id = i.receiver_id
         WHERE 1=1
     `
 	args := []interface{}{}
@@ -217,7 +217,7 @@ func (r *invitationRepository) List(userID int64, status, direction string, limi
 	invitations := []models.Invitation{}
 	for rows.Next() {
 		var inv models.Invitation
-		if err := rows.Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
+		if err := rows.Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.ReceiverEmail, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
 			&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar); err != nil {
 			continue
 		}
@@ -235,4 +235,67 @@ func (r *invitationRepository) IsAdmin(userID int64) (bool, error) {
 	var isAdmin bool
 	err := r.db.QueryRow("SELECT COALESCE(is_admin, FALSE) FROM users WHERE id = ?", userID).Scan(&isAdmin)
 	return isAdmin, err
+}
+
+func (r *invitationRepository) CreateForUnknown(senderID int64, invType, message, receiverEmail, inviteToken string) (int64, error) {
+	result, err := r.db.Exec(
+		"INSERT INTO invitations (type, sender_id, receiver_id, receiver_email, invite_token, message, status) VALUES (?, ?, NULL, ?, ?, ?, 'pending')",
+		invType, senderID, receiverEmail, inviteToken, message,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (r *invitationRepository) FindByToken(token string) (models.Invitation, error) {
+	var inv models.Invitation
+	err := r.db.QueryRow(`
+        SELECT i.id, i.type, i.sender_id, COALESCE(i.receiver_id, 0), COALESCE(i.receiver_email, ''), COALESCE(i.message, ''), i.status, i.created_at, i.updated_at,
+            COALESCE(s.name, ''), COALESCE(s.custom_avatar, ''), '', ''
+        FROM invitations i
+        JOIN users s ON s.id = i.sender_id
+        WHERE i.invite_token = ? AND i.status = 'pending'
+    `, token).Scan(&inv.ID, &inv.Type, &inv.SenderID, &inv.ReceiverID, &inv.ReceiverEmail, &inv.Message, &inv.Status, &inv.CreatedAt, &inv.UpdatedAt,
+		&inv.SenderName, &inv.SenderAvatar, &inv.ReceiverName, &inv.ReceiverAvatar)
+	return inv, err
+}
+
+func (r *invitationRepository) RedeemToken(token string, userID int64) error {
+	result, err := r.db.Exec(
+		"UPDATE invitations SET receiver_id = ?, receiver_email = NULL, invite_token = NULL, updated_at = NOW() WHERE invite_token = ? AND status = 'pending' AND receiver_id IS NULL",
+		userID, token,
+	)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *invitationRepository) FindPendingByEmail(email string) ([]models.Invitation, error) {
+	rows, err := r.db.Query(
+		"SELECT id FROM invitations WHERE receiver_email = ? AND status = 'pending'",
+		email,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var invitations []models.Invitation
+	for rows.Next() {
+		var inv models.Invitation
+		if err := rows.Scan(&inv.ID); err != nil {
+			continue
+		}
+		invitations = append(invitations, inv)
+	}
+	return invitations, nil
 }

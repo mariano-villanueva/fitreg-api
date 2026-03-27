@@ -128,6 +128,12 @@ type InvitationRepository interface {
 	List(userID int64, status, direction string, limit, offset int) ([]models.Invitation, error)
 	Cancel(invID int64) error
 	IsAdmin(userID int64) (bool, error)
+
+	// Token-based invite flow
+	CreateForUnknown(senderID int64, invType, message, receiverEmail, inviteToken string) (invID int64, err error)
+	FindByToken(token string) (models.Invitation, error)
+	RedeemToken(token string, userID int64) error
+	FindPendingByEmail(email string) ([]models.Invitation, error)
 }
 
 // AchievementRepository handles all coach achievement database operations.
