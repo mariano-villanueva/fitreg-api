@@ -69,6 +69,7 @@ type InvitationServicer interface {
 	GetByID(invID, requestingUserID int64) (models.Invitation, error)
 	Respond(invID, userID int64, action string) error
 	Cancel(invID, userID int64) error
+	Redeem(token string, userID int64) error
 }
 
 // NotificationServicer defines the contract for notification business logic used by NotificationHandler.

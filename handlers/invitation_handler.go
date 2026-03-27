@@ -139,3 +139,24 @@ func (h *InvitationHandler) CancelInvitation(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Invitation cancelled"})
 }
+
+func (h *InvitationHandler) RedeemInvitation(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req models.RedeemInvitationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := h.svc.Redeem(req.Token, userID); err != nil {
+		handleServiceErr(w, err, "InvitationHandler.RedeemInvitation", apperr.INVITATION_006, "Failed to redeem invitation")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Invitation redeemed"})
+}
