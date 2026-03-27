@@ -44,7 +44,7 @@ func Load() *Config {
 }
 
 func (c *Config) DSN() string {
-	return c.DBUser + ":" + c.DBPassword + "@tcp(" + c.DBHost + ":" + c.DBPort + ")/" + c.DBName + "?parseTime=true"
+	return c.DBUser + ":" + c.DBPassword + "@tcp(" + c.DBHost + ":" + c.DBPort + ")/" + c.DBName + "?parseTime=true&loc=UTC"
 }
 
 func getEnv(key, fallback string) string {
