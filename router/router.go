@@ -376,6 +376,14 @@ func New(
 		}
 	})
 
+	mux.HandleFunc("/api/invitations/redeem", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			invitation.RedeemInvitation(w, r)
+		} else {
+			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+		}
+	})
+
 	mux.HandleFunc("/api/invitations/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/respond") {
 			if r.Method == http.MethodPut {

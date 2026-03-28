@@ -47,6 +47,8 @@ func handleServiceErr(w http.ResponseWriter, err error, op, internalCode, fallba
 		code, msg = http.StatusConflict, "Student has reached the maximum number of coaches"
 	case errors.Is(err, services.ErrWorkoutFinished):
 		code, msg = http.StatusConflict, "Cannot edit a finished workout"
+	case errors.Is(err, services.ErrInvalidToken):
+		code, msg = http.StatusBadRequest, "Invalid or expired token"
 	default:
 		code = http.StatusInternalServerError
 		msg = fallbackMsg

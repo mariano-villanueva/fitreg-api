@@ -8,7 +8,9 @@ type Invitation struct {
 	ID             int64     `json:"id"`
 	Type           string    `json:"type"`
 	SenderID       int64     `json:"sender_id"`
-	ReceiverID     int64     `json:"receiver_id"`
+	ReceiverID     int64     `json:"receiver_id,omitempty"`
+	ReceiverEmail  string    `json:"receiver_email,omitempty"`
+	InviteToken    string    `json:"-"`
 	Message        string    `json:"message"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
@@ -28,4 +30,8 @@ type CreateInvitationRequest struct {
 
 type RespondInvitationRequest struct {
 	Action string `json:"action"`
+}
+
+type RedeemInvitationRequest struct {
+	Token string `json:"token"`
 }

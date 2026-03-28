@@ -19,3 +19,6 @@ var ErrStudentMaxCoaches = errors.New("student has reached the maximum number of
 
 // ErrWorkoutFinished is returned when trying to edit or delete a non-pending assigned workout.
 var ErrWorkoutFinished = errors.New("cannot edit a finished workout")
+
+// ErrInvalidToken is returned when an invite token is not found or already redeemed.
+var ErrInvalidToken = errors.New("invalid_token")

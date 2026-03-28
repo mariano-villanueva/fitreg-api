@@ -1,10 +1,13 @@
 package services
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 
+	"github.com/fitreg/api/config"
 	"github.com/fitreg/api/models"
 	"github.com/fitreg/api/repository"
 )
@@ -28,14 +31,24 @@ type InvitationService struct {
 	repo     repository.InvitationRepository
 	notifSvc *NotificationService
 	userRepo repository.UserRepository
+	emailSvc EmailService
+	appURL   string
 }
 
 func NewInvitationService(
 	repo repository.InvitationRepository,
 	notifSvc *NotificationService,
 	userRepo repository.UserRepository,
+	emailSvc EmailService,
+	cfg *config.Config,
 ) *InvitationService {
-	return &InvitationService{repo: repo, notifSvc: notifSvc, userRepo: userRepo}
+	return &InvitationService{
+		repo:     repo,
+		notifSvc: notifSvc,
+		userRepo: userRepo,
+		emailSvc: emailSvc,
+		appURL:   cfg.AppURL,
+	}
 }
 
 func (s *InvitationService) Create(senderID int64, req models.CreateInvitationRequest) (models.Invitation, error) {
@@ -58,7 +71,8 @@ func (s *InvitationService) Create(senderID int64, req models.CreateInvitationRe
 		rID, isCoach, coachPublic, err := s.repo.FindReceiverByEmail(req.ReceiverEmail)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return models.Invitation{}, ErrNotFound
+				// Receiver not found — create invitation for unregistered email
+				return s.createForUnknownReceiver(senderID, req)
 			}
 			return models.Invitation{}, err
 		}
@@ -154,8 +168,81 @@ func (s *InvitationService) Create(senderID int64, req models.CreateInvitationRe
 		log.Printf("ERROR creating invitation notification: %v", err)
 	}
 
+	// Send email for email-based coach invitations (non-fatal)
+	if req.ReceiverEmail != "" && req.Type == "coach_invite" {
+		senderName, _, _ := s.userRepo.GetNameAndAvatar(senderID)
+		if err := s.emailSvc.SendCoachInviteExisting(senderName, req.ReceiverEmail, s.appURL); err != nil {
+			log.Printf("ERROR sending invite email to %s: %v", req.ReceiverEmail, err)
+		}
+	}
+
 	// 12. Return created invitation
 	return s.repo.GetByID(invID)
+}
+
+func (s *InvitationService) createForUnknownReceiver(senderID int64, req models.CreateInvitationRequest) (models.Invitation, error) {
+	if req.Type != "coach_invite" {
+		return models.Invitation{}, ErrReceiverNotCoach
+	}
+
+	isCoach, err := s.repo.IsSenderCoach(senderID)
+	if err != nil {
+		return models.Invitation{}, err
+	}
+	if !isCoach {
+		return models.Invitation{}, ErrNotCoach
+	}
+
+	// Generate invite token (32 random hex bytes = 64 char string)
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return models.Invitation{}, fmt.Errorf("failed to generate token: %w", err)
+	}
+	token := fmt.Sprintf("%x", b)
+
+	invID, err := s.repo.CreateForUnknown(senderID, req.Type, req.Message, req.ReceiverEmail, token)
+	if err != nil {
+		return models.Invitation{}, err
+	}
+
+	// Send invite email (non-fatal)
+	senderName, _, _ := s.userRepo.GetNameAndAvatar(senderID)
+	if err := s.emailSvc.SendCoachInviteNew(senderName, req.ReceiverEmail, token, s.appURL); err != nil {
+		log.Printf("ERROR sending invite email to %s: %v", req.ReceiverEmail, err)
+	}
+
+	return s.repo.GetByID(invID)
+}
+
+func (s *InvitationService) Redeem(token string, userID int64) error {
+	// Find the invitation by token (verifies it's pending and token exists)
+	inv, err := s.repo.FindByToken(token)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInvalidToken
+		}
+		return err
+	}
+
+	// Verify receiver_id is still NULL (not redeemed)
+	if inv.ReceiverID != 0 {
+		return ErrInvalidToken
+	}
+
+	// Atomically set receiver_id and clear token
+	if err := s.repo.RedeemToken(token, userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInvalidToken
+		}
+		return err
+	}
+
+	// Accept the invitation (creates coach-student relationship + notifies coach)
+	if err := s.notifSvc.AcceptInvitation(inv.ID, userID); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *InvitationService) List(userID int64, status, direction string, limit, offset int) ([]models.Invitation, error) {

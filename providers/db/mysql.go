@@ -25,5 +25,9 @@ func New(cfg *config.Config) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	if _, err := db.Exec("SET time_zone = '+00:00'"); err != nil {
+		return nil, fmt.Errorf("failed to set timezone: %w", err)
+	}
+
 	return db, nil
 }

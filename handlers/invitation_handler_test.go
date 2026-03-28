@@ -19,6 +19,7 @@ type mockInvitationService struct {
 	getByIDFn func(invID, requestingUserID int64) (models.Invitation, error)
 	respondFn func(invID, userID int64, action string) error
 	cancelFn  func(invID, userID int64) error
+	redeemFn  func(token string, userID int64) error
 }
 
 func (m *mockInvitationService) Create(senderID int64, req models.CreateInvitationRequest) (models.Invitation, error) {
@@ -35,6 +36,12 @@ func (m *mockInvitationService) Respond(invID, userID int64, action string) erro
 }
 func (m *mockInvitationService) Cancel(invID, userID int64) error {
 	return m.cancelFn(invID, userID)
+}
+func (m *mockInvitationService) Redeem(token string, userID int64) error {
+	if m.redeemFn != nil {
+		return m.redeemFn(token, userID)
+	}
+	return nil
 }
 
 func newInvReq(method, path string, body []byte, userID int64) *http.Request {
