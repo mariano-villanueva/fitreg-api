@@ -182,7 +182,10 @@ func (r *workoutRepository) Delete(id, userID int64) (bool, error) {
 func (r *workoutRepository) CreateCoachWorkout(coachID int64, req models.CreateCoachWorkoutRequest) (models.Workout, error) {
 	var ef interface{}
 	if len(req.ExpectedFields) > 0 {
-		b, _ := json.Marshal(req.ExpectedFields)
+		b, err := json.Marshal(req.ExpectedFields)
+		if err != nil {
+			return models.Workout{}, err
+		}
 		ef = string(b)
 	}
 	result, err := r.db.Exec(`
@@ -344,10 +347,13 @@ func (r *workoutRepository) GetCoachWorkout(workoutID, coachID int64) (models.Wo
 func (r *workoutRepository) UpdateCoachWorkout(workoutID, coachID int64, req models.UpdateCoachWorkoutRequest) (models.Workout, error) {
 	var ef interface{}
 	if len(req.ExpectedFields) > 0 {
-		b, _ := json.Marshal(req.ExpectedFields)
+		b, err := json.Marshal(req.ExpectedFields)
+		if err != nil {
+			return models.Workout{}, err
+		}
 		ef = string(b)
 	}
-	_, err := r.db.Exec(`
+	res, err := r.db.Exec(`
 		UPDATE workouts SET
 		  title = ?, description = ?, type = ?, distance_km = ?, duration_seconds = ?,
 		  notes = ?, expected_fields = ?, due_date = ?, updated_at = NOW()
@@ -356,6 +362,13 @@ func (r *workoutRepository) UpdateCoachWorkout(workoutID, coachID int64, req mod
 		req.Notes, ef, req.DueDate, workoutID, coachID)
 	if err != nil {
 		return models.Workout{}, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return models.Workout{}, err
+	}
+	if n == 0 {
+		return models.Workout{}, sql.ErrNoRows
 	}
 	return r.GetByID(workoutID)
 }
@@ -371,7 +384,10 @@ func (r *workoutRepository) DeleteCoachWorkout(workoutID, coachID int64) error {
 	if err != nil {
 		return err
 	}
-	n, _ := result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
 	if n == 0 {
 		return sql.ErrNoRows
 	}
@@ -399,29 +415,42 @@ func (r *workoutRepository) GetMyWorkouts(studentID int64, startDate, endDate st
 }
 
 func (r *workoutRepository) UpdateStatus(workoutID, studentID int64, req models.UpdateWorkoutStatusRequest) (int64, string, error) {
-	var coachID int64
-	var title string
-	var currentStatus string
-	err := r.db.QueryRow(
-		`SELECT coach_id, COALESCE(title,''), status FROM workouts WHERE id = ? AND user_id = ? AND coach_id IS NOT NULL`,
-		workoutID, studentID,
-	).Scan(&coachID, &title, &currentStatus)
-	if err == sql.ErrNoRows {
-		return 0, "", sql.ErrNoRows
-	}
-	if err != nil {
-		return 0, "", err
-	}
-	if currentStatus != "pending" {
-		return 0, "", ErrStatusConflict
-	}
-	_, err = r.db.Exec(`
+	res, err := r.db.Exec(`
 		UPDATE workouts SET
 		  status = ?, result_time_seconds = ?, result_distance_km = ?,
 		  result_heart_rate = ?, result_feeling = ?, image_file_id = ?, updated_at = NOW()
-		WHERE id = ? AND user_id = ?
+		WHERE id = ? AND user_id = ? AND coach_id IS NOT NULL AND status = 'pending'
 	`, req.Status, req.ResultTimeSeconds, req.ResultDistanceKm,
 		req.ResultHeartRate, req.ResultFeeling, req.ImageFileID, workoutID, studentID)
+	if err != nil {
+		return 0, "", err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, "", err
+	}
+	if n == 0 {
+		// Distinguish: not found vs already finalized
+		var currentStatus string
+		err := r.db.QueryRow(
+			`SELECT status FROM workouts WHERE id = ? AND user_id = ? AND coach_id IS NOT NULL`,
+			workoutID, studentID,
+		).Scan(&currentStatus)
+		if err == sql.ErrNoRows {
+			return 0, "", sql.ErrNoRows
+		}
+		if err != nil {
+			return 0, "", err
+		}
+		return 0, "", ErrStatusConflict
+	}
+	// Fetch coachID and title for notification
+	var coachID int64
+	var title string
+	err = r.db.QueryRow(
+		`SELECT coach_id, COALESCE(title,'') FROM workouts WHERE id = ?`,
+		workoutID,
+	).Scan(&coachID, &title)
 	if err != nil {
 		return 0, "", err
 	}
@@ -452,7 +481,7 @@ func (r *workoutRepository) GetSegments(workoutID int64) ([]models.WorkoutSegmen
 		}
 		segments = append(segments, s)
 	}
-	return segments, nil
+	return segments, rows.Err()
 }
 
 func (r *workoutRepository) ReplaceSegments(workoutID int64, segs []models.SegmentRequest) error {
