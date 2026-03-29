@@ -331,7 +331,7 @@ func (h *CoachHandler) GetDailySummary(w http.ResponseWriter, r *http.Request) {
 
 	date := r.URL.Query().Get("date")
 	if date == "" {
-		date = time.Now().Format("2006-01-02")
+		date = time.Now().UTC().Format("2006-01-02")
 	}
 	if _, err := time.Parse("2006-01-02", date); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid date format")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"time"
 
 	"github.com/fitreg/api/models"
 )
@@ -584,8 +585,8 @@ func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req
 				studentID, truncateDate(aw.DueDate.String), finalDistance, finalDuration, avgHR, aw.Type, notes)
 		} else {
 			_, insertErr = r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
-				VALUES (?, CURDATE(), ?, ?, ?, ?, ?, NOW(), NOW())`,
-				studentID, finalDistance, finalDuration, avgHR, aw.Type, notes)
+				VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+				studentID, time.Now().UTC().Format("2006-01-02"), finalDistance, finalDuration, avgHR, aw.Type, notes)
 		}
 		if insertErr != nil {
 			log.Printf("insert workout from completed assignment: %v", insertErr)
@@ -752,6 +753,7 @@ func (r *coachRepository) GetFileUUID(fileID int64) (string, error) {
 }
 
 func (r *coachRepository) GetWeeklyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error) {
+	cutoff := time.Now().UTC().AddDate(0, 0, -weeks*7).Format("2006-01-02")
 	rows, err := r.db.Query(`
 		SELECT
 			DATE_SUB(due_date, INTERVAL WEEKDAY(due_date) DAY)    AS week_start,
@@ -770,10 +772,10 @@ func (r *coachRepository) GetWeeklyLoad(studentID int64, weeks int) ([]models.We
 			) AS has_personal_workouts
 		FROM assigned_workouts aw
 		WHERE aw.student_id = ?
-		  AND aw.due_date >= DATE_SUB(CURDATE(), INTERVAL ? WEEK)
+		  AND aw.due_date >= ?
 		GROUP BY week_start
 		ORDER BY week_start DESC
-	`, studentID, studentID, weeks)
+	`, studentID, studentID, cutoff)
 	if err != nil {
 		return nil, err
 	}
