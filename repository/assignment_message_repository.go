@@ -51,6 +51,9 @@ func (r *assignmentMessageRepository) List(workoutID int64) ([]models.Assignment
 		}
 		messages = append(messages, m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return messages, nil
 }
 
