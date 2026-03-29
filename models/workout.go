@@ -6,7 +6,7 @@ import (
 )
 
 type Workout struct {
-	ID                int64            `json:"id"`
+	ID                 int64            `json:"id"`
 	UserID             int64            `json:"user_id"`
 	CoachID            *int64           `json:"coach_id"`
 	Title              string           `json:"title"`

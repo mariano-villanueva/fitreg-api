@@ -14,39 +14,39 @@ type CoachStudent struct {
 }
 
 type WorkoutSegment struct {
-	ID                int64   `json:"id"`
-	WorkoutID         int64   `json:"workout_id"`
-	OrderIndex        int     `json:"order_index"`
-	SegmentType       string  `json:"segment_type"`
-	Repetitions       int     `json:"repetitions"`
-	Value             float64 `json:"value"`
-	Unit              string  `json:"unit"`
-	Intensity         string  `json:"intensity"`
-	WorkValue         float64 `json:"work_value"`
-	WorkUnit          string  `json:"work_unit"`
-	WorkIntensity     string  `json:"work_intensity"`
-	RestValue         float64 `json:"rest_value"`
-	RestUnit          string  `json:"rest_unit"`
-	RestIntensity     string  `json:"rest_intensity"`
+	ID            int64   `json:"id"`
+	WorkoutID     int64   `json:"workout_id"`
+	OrderIndex    int     `json:"order_index"`
+	SegmentType   string  `json:"segment_type"`
+	Repetitions   int     `json:"repetitions"`
+	Value         float64 `json:"value"`
+	Unit          string  `json:"unit"`
+	Intensity     string  `json:"intensity"`
+	WorkValue     float64 `json:"work_value"`
+	WorkUnit      string  `json:"work_unit"`
+	WorkIntensity string  `json:"work_intensity"`
+	RestValue     float64 `json:"rest_value"`
+	RestUnit      string  `json:"rest_unit"`
+	RestIntensity string  `json:"rest_intensity"`
 }
 
 type CoachAchievement struct {
-	ID         int64     `json:"id"`
-	CoachID    int64     `json:"coach_id"`
-	EventName  string    `json:"event_name"`
-	EventDate  string    `json:"event_date"`
-	DistanceKm float64   `json:"distance_km"`
-	ResultTime string    `json:"result_time"`
-	Position   int       `json:"position"`
-	ExtraInfo       string `json:"extra_info"`
-	ImageFileID     *int64 `json:"image_file_id"`
-	ImageURL        string `json:"image_url,omitempty"`
-	IsPublic        bool   `json:"is_public"`
-	IsVerified      bool   `json:"is_verified"`
-	RejectionReason string `json:"rejection_reason"`
-	VerifiedBy int64     `json:"verified_by,omitempty"`
-	VerifiedAt string    `json:"verified_at,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID              int64     `json:"id"`
+	CoachID         int64     `json:"coach_id"`
+	EventName       string    `json:"event_name"`
+	EventDate       string    `json:"event_date"`
+	DistanceKm      float64   `json:"distance_km"`
+	ResultTime      string    `json:"result_time"`
+	Position        int       `json:"position"`
+	ExtraInfo       string    `json:"extra_info"`
+	ImageFileID     *int64    `json:"image_file_id"`
+	ImageURL        string    `json:"image_url,omitempty"`
+	IsPublic        bool      `json:"is_public"`
+	IsVerified      bool      `json:"is_verified"`
+	RejectionReason string    `json:"rejection_reason"`
+	VerifiedBy      int64     `json:"verified_by,omitempty"`
+	VerifiedAt      string    `json:"verified_at,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type CreateAchievementRequest struct {
@@ -91,17 +91,17 @@ type UpdateCoachProfileRequest struct {
 }
 
 type CoachPublicProfile struct {
-	ID               int64              `json:"id"`
-	Name             string             `json:"name"`
-	AvatarURL        string             `json:"avatar_url"`
-	CoachDescription string             `json:"coach_description"`
-	AvgRating        float64            `json:"avg_rating"`
-	RatingCount      int                `json:"rating_count"`
+	ID                       int64              `json:"id"`
+	Name                     string             `json:"name"`
+	AvatarURL                string             `json:"avatar_url"`
+	CoachDescription         string             `json:"coach_description"`
+	AvgRating                float64            `json:"avg_rating"`
+	RatingCount              int                `json:"rating_count"`
 	StudentCount             int                `json:"student_count"`
 	VerifiedAchievementCount int                `json:"verified_achievement_count"`
 	IsMyCoach                bool               `json:"is_my_coach"`
-	Achievements     []CoachAchievement `json:"achievements"`
-	Ratings          []CoachRating      `json:"ratings"`
+	Achievements             []CoachAchievement `json:"achievements"`
+	Ratings                  []CoachRating      `json:"ratings"`
 }
 
 type CoachListItem struct {
@@ -158,12 +158,12 @@ type DailySummaryItem struct {
 	StudentID     int64                `json:"student_id"`
 	StudentName   string               `json:"student_name"`
 	StudentAvatar *string              `json:"student_avatar"`
-	Workout       *DailySummaryWorkout `json:"assigned_workout"`
+	Workout       *DailySummaryWorkout `json:"workout"`
 }
 
 // WeeklyLoadEntry represents the training load for a single week.
 type WeeklyLoadEntry struct {
-	WeekStart           string  `json:"week_start"`            // YYYY-MM-DD (Monday)
+	WeekStart           string  `json:"week_start"` // YYYY-MM-DD (Monday)
 	PlannedKm           float64 `json:"planned_km"`
 	ActualKm            float64 `json:"actual_km"`
 	PlannedSeconds      int     `json:"planned_seconds"`
