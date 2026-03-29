@@ -82,6 +82,12 @@ func New(
 			}
 			return
 		}
+		// Reject unknown sub-paths (e.g. /api/workouts/123/anything)
+		trimmed := strings.TrimPrefix(r.URL.Path, "/api/workouts/")
+		if strings.Contains(trimmed, "/") {
+			http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
+			return
+		}
 		switch r.Method {
 		case http.MethodGet:
 			workout.GetWorkout(w, r)
