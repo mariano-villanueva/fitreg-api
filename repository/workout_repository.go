@@ -362,7 +362,7 @@ func (r *workoutRepository) UpdateCoachWorkout(workoutID, coachID int64, req mod
 		UPDATE workouts SET
 		  title = ?, description = ?, type = ?, distance_km = ?, duration_seconds = ?,
 		  notes = ?, expected_fields = ?, due_date = ?, updated_at = NOW()
-		WHERE id = ? AND coach_id = ?
+		WHERE id = ? AND coach_id = ? AND status = 'pending'
 	`, req.Title, req.Description, req.Type, req.DistanceKm, req.DurationSeconds,
 		req.Notes, ef, req.DueDate, workoutID, coachID)
 	if err != nil {
