@@ -2,16 +2,31 @@ package repository
 
 import "github.com/fitreg/api/models"
 
-// WorkoutRepository handles all workout-related database operations.
+// WorkoutRepository handles all workout CRUD for both personal and coach-assigned workouts.
 type WorkoutRepository interface {
-	List(userID int64) ([]models.Workout, error)
+	// Personal workout methods (coach_id = NULL)
+	List(userID int64, startDate, endDate string) ([]models.Workout, error)
 	GetByID(id int64) (models.Workout, error)
-	ExistsByOwner(id, userID int64) bool
 	Create(userID int64, req models.CreateWorkoutRequest) (int64, error)
 	Update(id, userID int64, req models.UpdateWorkoutRequest) (bool, error)
 	Delete(id, userID int64) (bool, error)
+
+	// Coach-assigned workout methods (coach_id != NULL)
+	CreateCoachWorkout(coachID int64, req models.CreateCoachWorkoutRequest) (models.Workout, error)
+	ListCoachWorkouts(coachID int64, studentID *int64, statusFilter, startDate, endDate string, limit, offset int) ([]models.Workout, int, error)
+	GetCoachWorkout(workoutID, coachID int64) (models.Workout, error)
+	UpdateCoachWorkout(workoutID, coachID int64, req models.UpdateCoachWorkoutRequest) (models.Workout, error)
+	GetWorkoutStatus(workoutID, coachID int64) (string, error)
+	DeleteCoachWorkout(workoutID, coachID int64) error
+
+	// Student methods
+	GetMyWorkouts(studentID int64, startDate, endDate string) ([]models.Workout, error)
+	UpdateStatus(workoutID, studentID int64, req models.UpdateWorkoutStatusRequest) (coachID int64, workoutTitle string, err error)
+
+	// Shared
 	GetSegments(workoutID int64) ([]models.WorkoutSegment, error)
 	ReplaceSegments(workoutID int64, segs []models.SegmentRequest) error
+	GetFileUUID(fileID int64) (string, error)
 }
 
 // FileRepository handles all file-related database operations.
@@ -151,7 +166,7 @@ type AchievementRepository interface {
 	GetFileUUID(fileID int64) (string, error)
 }
 
-// CoachRepository handles coach-student relationships and assigned workouts.
+// CoachRepository handles coach-student relationships and load queries.
 type CoachRepository interface {
 	IsCoach(userID int64) (bool, error)
 	IsAdmin(userID int64) (bool, error)
@@ -160,30 +175,18 @@ type CoachRepository interface {
 	GetRelationship(csID int64) (coachID, studentID int64, status string, err error)
 	EndRelationship(csID int64) error
 	GetStudentWorkouts(studentID int64) ([]models.Workout, error)
-	ListAssignedWorkouts(coachID int64, studentID int64, statusFilter, startDate, endDate string, limit, offset int) ([]models.AssignedWorkout, int, error)
-	CreateAssignedWorkout(coachID int64, req models.CreateAssignedWorkoutRequest) (models.AssignedWorkout, error)
-	GetAssignedWorkout(awID, coachID int64) (models.AssignedWorkout, error)
-	UpdateAssignedWorkout(awID, coachID int64, req models.UpdateAssignedWorkoutRequest) (models.AssignedWorkout, error)
-	GetAssignedWorkoutStatus(awID, coachID int64) (string, error)
-	DeleteAssignedWorkout(awID, coachID int64) error
-	GetMyAssignedWorkouts(studentID int64, startDate, endDate string) ([]models.AssignedWorkout, error)
-	UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) (coachID int64, workoutTitle string, err error)
 	GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error)
 	GetUserName(id int64) (string, error)
-	FetchSegments(awID int64) []models.WorkoutSegment
-	GetFileUUID(fileID int64) (string, error)
 	GetWeeklyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error)
 }
 
-// AssignmentMessageRepository handles assignment message and assigned workout detail operations.
+// AssignmentMessageRepository handles assignment message and workout detail operations.
 type AssignmentMessageRepository interface {
-	GetParticipants(awID int64) (coachID, studentID int64, status, title string, err error)
-	List(awID int64) ([]models.AssignmentMessage, error)
-	Create(awID, senderID int64, body string) (models.AssignmentMessage, error)
-	MarkRead(awID, userID int64) error
-	GetAssignedWorkoutDetail(awID, userID int64) (models.AssignedWorkout, error)
-	// FetchSegments returns segments for an assigned workout.
-	FetchSegments(awID int64) []models.WorkoutSegment
+	GetParticipants(workoutID int64) (coachID, studentID int64, status, title string, err error)
+	List(workoutID int64) ([]models.AssignmentMessage, error)
+	Create(workoutID, senderID int64, body string) (models.AssignmentMessage, error)
+	MarkRead(workoutID, userID int64) error
+	GetWorkoutDetail(workoutID, userID int64) (models.Workout, error)
 	// GetFileUUID resolves a file_id to its download UUID.
 	GetFileUUID(fileID int64) (string, error)
 }
