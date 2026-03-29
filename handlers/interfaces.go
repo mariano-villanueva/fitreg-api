@@ -10,11 +10,20 @@ import (
 
 // WorkoutServicer defines the contract for workout business logic used by WorkoutHandler.
 type WorkoutServicer interface {
-	List(userID int64) ([]models.Workout, error)
+	// Personal
+	List(userID int64, startDate, endDate string) ([]models.Workout, error)
 	GetByID(id, userID int64) (models.Workout, error)
 	Create(userID int64, req models.CreateWorkoutRequest) (models.Workout, error)
 	Update(id, userID int64, req models.UpdateWorkoutRequest) (models.Workout, error)
 	Delete(id, userID int64) error
+	UpdateStatus(id, userID int64, req models.UpdateWorkoutStatusRequest) error
+	// Coach
+	GetMyWorkouts(studentID int64, startDate, endDate string) ([]models.Workout, error)
+	CreateCoachWorkout(coachID int64, req models.CreateCoachWorkoutRequest) (models.Workout, error)
+	ListCoachWorkouts(coachID int64, studentID *int64, statusFilter, startDate, endDate string, limit, offset int) ([]models.Workout, int, error)
+	GetCoachWorkout(workoutID, coachID int64) (models.Workout, error)
+	UpdateCoachWorkout(workoutID, coachID int64, req models.UpdateCoachWorkoutRequest) (models.Workout, error)
+	DeleteCoachWorkout(workoutID, coachID int64) error
 }
 
 // UserServicer defines the contract for user business logic used by UserHandler.
@@ -41,13 +50,6 @@ type CoachServicer interface {
 	ListStudents(coachID int64) ([]models.CoachStudentInfo, error)
 	EndRelationship(csID, userID int64) error
 	GetStudentWorkouts(coachID, studentID int64) ([]models.Workout, error)
-	ListAssignedWorkouts(coachID, studentID int64, statusFilter, startDate, endDate string, limit, offset int) ([]models.AssignedWorkout, int, error)
-	CreateAssignedWorkout(coachID int64, req models.CreateAssignedWorkoutRequest) (models.AssignedWorkout, error)
-	GetAssignedWorkout(awID, coachID int64) (models.AssignedWorkout, error)
-	UpdateAssignedWorkout(awID, coachID int64, req models.UpdateAssignedWorkoutRequest) (models.AssignedWorkout, error)
-	DeleteAssignedWorkout(awID, coachID int64) error
-	GetMyAssignedWorkouts(studentID int64, startDate, endDate string) ([]models.AssignedWorkout, error)
-	UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) error
 	GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error)
 	GetStudentLoad(coachID, studentID int64, weeks int) ([]models.WeeklyLoadEntry, error)
 	GetMyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error)
@@ -128,10 +130,10 @@ type WeeklyTemplateServicer interface {
 
 // AssignmentMessageServicer defines the contract for assignment message business logic.
 type AssignmentMessageServicer interface {
-	ListMessages(awID, userID int64) ([]models.AssignmentMessage, error)
-	SendMessage(awID, senderID int64, body string) (models.AssignmentMessage, error)
-	MarkRead(awID, userID int64) error
-	GetAssignedWorkoutDetail(awID, userID int64) (models.AssignedWorkout, error)
+	ListMessages(workoutID, userID int64) ([]models.AssignmentMessage, error)
+	SendMessage(workoutID, senderID int64, body string) (models.AssignmentMessage, error)
+	MarkRead(workoutID, userID int64) error
+	GetWorkoutDetail(workoutID, userID int64) (models.Workout, error)
 }
 
 // AuthServicer defines the contract for authentication business logic.
