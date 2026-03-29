@@ -400,7 +400,10 @@ CREATE TABLE workouts (
   updated_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id)       REFERENCES users(id),
   FOREIGN KEY (coach_id)      REFERENCES users(id),
-  FOREIGN KEY (image_file_id) REFERENCES files(id)
+  FOREIGN KEY (image_file_id) REFERENCES files(id),
+  INDEX idx_workouts_user_due (user_id, due_date),
+  INDEX idx_workouts_coach (coach_id),
+  INDEX idx_workouts_due_date (due_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE workout_segments (
@@ -429,5 +432,6 @@ CREATE TABLE assignment_messages (
   is_read    BOOLEAN  NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE,
-  FOREIGN KEY (sender_id)  REFERENCES users(id)
+  FOREIGN KEY (sender_id)  REFERENCES users(id),
+  INDEX idx_am_unread (workout_id, sender_id, is_read)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
