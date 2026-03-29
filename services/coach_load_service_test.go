@@ -15,8 +15,8 @@ type stubCoachRepo struct {
 	getWeeklyLoadFn func(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error)
 }
 
-func (s *stubCoachRepo) IsCoach(userID int64) (bool, error)   { return false, nil }
-func (s *stubCoachRepo) IsAdmin(userID int64) (bool, error)   { return false, nil }
+func (s *stubCoachRepo) IsCoach(userID int64) (bool, error)  { return false, nil }
+func (s *stubCoachRepo) IsAdmin(userID int64) (bool, error)  { return false, nil }
 func (s *stubCoachRepo) IsStudentOf(coachID, studentID int64) (bool, error) {
 	if s.isStudentOfFn != nil {
 		return s.isStudentOfFn(coachID, studentID)
@@ -33,32 +33,10 @@ func (s *stubCoachRepo) EndRelationship(csID int64) error { return nil }
 func (s *stubCoachRepo) GetStudentWorkouts(studentID int64) ([]models.Workout, error) {
 	return nil, nil
 }
-func (s *stubCoachRepo) ListAssignedWorkouts(coachID, studentID int64, statusFilter, startDate, endDate string, limit, offset int) ([]models.AssignedWorkout, int, error) {
-	return nil, 0, nil
-}
-func (s *stubCoachRepo) CreateAssignedWorkout(coachID int64, req models.CreateAssignedWorkoutRequest) (models.AssignedWorkout, error) {
-	return models.AssignedWorkout{}, nil
-}
-func (s *stubCoachRepo) GetAssignedWorkout(awID, coachID int64) (models.AssignedWorkout, error) {
-	return models.AssignedWorkout{}, nil
-}
-func (s *stubCoachRepo) UpdateAssignedWorkout(awID, coachID int64, req models.UpdateAssignedWorkoutRequest) (models.AssignedWorkout, error) {
-	return models.AssignedWorkout{}, nil
-}
-func (s *stubCoachRepo) GetAssignedWorkoutStatus(awID, coachID int64) (string, error) { return "", nil }
-func (s *stubCoachRepo) DeleteAssignedWorkout(awID, coachID int64) error               { return nil }
-func (s *stubCoachRepo) GetMyAssignedWorkouts(studentID int64, startDate, endDate string) ([]models.AssignedWorkout, error) {
-	return nil, nil
-}
-func (s *stubCoachRepo) UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) (int64, string, error) {
-	return 0, "", nil
-}
 func (s *stubCoachRepo) GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error) {
 	return nil, nil
 }
-func (s *stubCoachRepo) GetUserName(id int64) (string, error)          { return "", nil }
-func (s *stubCoachRepo) FetchSegments(awID int64) []models.WorkoutSegment { return nil }
-func (s *stubCoachRepo) GetFileUUID(fileID int64) (string, error)      { return "", nil }
+func (s *stubCoachRepo) GetUserName(id int64) (string, error) { return "", nil }
 func (s *stubCoachRepo) GetWeeklyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error) {
 	if s.getWeeklyLoadFn != nil {
 		return s.getWeeklyLoadFn(studentID, weeks)
