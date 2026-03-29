@@ -90,7 +90,7 @@ _Última actualización: 2026-03-27 (sesión 3)_
 
 | Bug | Descripción | Prioridad |
 |-----|-------------|-----------|
-| **Timezone en prod** | La semana empieza el martes cerca de la medianoche — los días se calculan en un timezone local en vez de UTC. Auditar backend: toda fecha/hora debe guardarse y calcularse en UTC. Frontend: mostrar en el timezone del usuario (usar `Intl` o `date-fns-tz`). | Alta |
+| ~~**Timezone en prod**~~ | ✅ **Resuelto** — `CURDATE()` reemplazado por fecha UTC calculada en Go en `GetWeeklyLoad`; fallbacks de `time.Now()` → `time.Now().UTC()`; `DayModal` usa `T00:00:00` consistente con el resto del frontend. | — |
 
 ---
 
@@ -100,7 +100,7 @@ _Última actualización: 2026-03-27 (sesión 3)_
 |------|-------------|
 | **Unificar Workout y AssignedWorkout** | Hoy un alumno puede logear entrenamientos propios (`Workout`) y recibir entrenamientos del coach (`AssignedWorkout`). Son estructuras separadas. La idea: un entreno propio del alumno es conceptualmente un "assigned" de sí mismo. Unificar simplifca el modelo de datos, el historial y los gráficos de carga. Cambio de backend con migración. |
 | **Google Cloud Storage** | Configurar GCS para almacenar fotos de resultados y futura media. Hoy no hay storage real — las fotos quedan en base64 o sin persistencia real. Requiere: crear bucket, configurar credenciales de servicio, endpoint de upload firmado. |
-| **Infraestructura de emails** | Necesario para: invitaciones de coach a alumno, notificaciones de actividad, referidos. Opciones: SendGrid, Resend, AWS SES. El backend ya tiene el concepto de invitación pero no envía emails reales. |
+| ~~**Infraestructura de emails**~~ | ✅ **Resuelto** — Resend integrado. Invitaciones reales por email (usuario existente + token `/join` para nuevos). |
 
 ---
 
@@ -171,9 +171,9 @@ _Precios en ARS/USD a definir._
 ## Plan de iteración (sin deadline)
 
 ### Etapa 1 — Bugs e infraestructura (bloqueantes)
-- [ ] **Fix timezone** — auditar backend (todo en UTC), ajustar frontend al timezone del usuario
+- [x] **Fix timezone** — `CURDATE()` → UTC en Go, fallbacks explícitos, frontend ya usaba métodos locales correctamente
 - [ ] **Google Cloud Storage** — configurar bucket, credenciales, endpoint de upload firmado
-- [ ] **Infraestructura de emails** — elegir proveedor (Resend / SendGrid), integrar envío de invitaciones reales
+- [x] **Infraestructura de emails** — Resend integrado, invitaciones reales por email (usuario existente + token /join para nuevos)
 
 ### Etapa 2 — Features core
 - [x] Vista semanal del alumno — WeeklyStrip en AthleteHome
@@ -182,7 +182,7 @@ _Precios en ARS/USD a definir._
 - [x] Pulido de onboarding del alumno — form en 2 pasos
 - [x] Estados vacíos con guía de primeros pasos — panel + cards guiadas
 - [ ] **Unificar Workout y AssignedWorkout** — entreno propio del alumno = self-assigned
-- [ ] **Invitaciones reales por email** — depende de etapa 1
+- [x] **Invitaciones reales por email** — ✅ implementado con Resend
 
 ### Etapa 3 — Preparación para la demo
 - [ ] Datos mock para la demo
