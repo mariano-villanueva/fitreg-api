@@ -96,7 +96,7 @@ func (h *AssignmentMessageHandler) GetAssignedWorkoutDetail(w http.ResponseWrite
 		writeError(w, http.StatusBadRequest, "Invalid assigned workout ID")
 		return
 	}
-	aw, err := h.svc.GetAssignedWorkoutDetail(awID, userID)
+	aw, err := h.svc.GetWorkoutDetail(awID, userID)
 	if err != nil {
 		handleServiceErr(w, err, "AssignmentMessageHandler.GetAssignedWorkoutDetail", apperr.ASSIGNMENT_MSG_004, "Failed to fetch assigned workout")
 		return

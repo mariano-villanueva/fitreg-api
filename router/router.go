@@ -74,6 +74,14 @@ func New(
 	})
 
 	mux.HandleFunc("/api/workouts/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/status") {
+			if r.Method == http.MethodPut {
+				workout.UpdateWorkoutStatus(w, r)
+			} else {
+				http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			}
+			return
+		}
 		switch r.Method {
 		case http.MethodGet:
 			workout.GetWorkout(w, r)
@@ -202,26 +210,26 @@ func New(
 		}
 	})
 
-	// Coach assigned workouts routes
-	mux.HandleFunc("/api/coach/assigned-workouts", func(w http.ResponseWriter, r *http.Request) {
+	// Coach workout routes
+	mux.HandleFunc("/api/coach/workouts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			coach.ListAssignedWorkouts(w, r)
+			workout.ListCoachWorkouts(w, r)
 		case http.MethodPost:
-			coach.CreateAssignedWorkout(w, r)
+			workout.CreateCoachWorkout(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
 	})
 
-	mux.HandleFunc("/api/coach/assigned-workouts/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/coach/workouts/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			coach.GetAssignedWorkout(w, r)
+			workout.GetCoachWorkout(w, r)
 		case http.MethodPut:
-			coach.UpdateAssignedWorkout(w, r)
+			workout.UpdateCoachWorkout(w, r)
 		case http.MethodDelete:
-			coach.DeleteAssignedWorkout(w, r)
+			workout.DeleteCoachWorkout(w, r)
 		default:
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
@@ -231,23 +239,6 @@ func New(
 	mux.HandleFunc("/api/me/load", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			coach.GetMyLoad(w, r)
-		} else {
-			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
-		}
-	})
-
-	// Student assigned workouts routes
-	mux.HandleFunc("/api/my-assigned-workouts", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			coach.GetMyAssignedWorkouts(w, r)
-		} else {
-			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
-		}
-	})
-
-	mux.HandleFunc("/api/my-assigned-workouts/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/status") {
-			coach.UpdateAssignedWorkoutStatus(w, r)
 		} else {
 			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
 		}
