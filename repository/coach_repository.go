@@ -295,7 +295,7 @@ func (r *coachRepository) GetDailySummary(coachID int64, date string, includeSeg
 		}
 	}
 
-	return items, nil
+	return items, rows.Err()
 }
 
 func (r *coachRepository) GetUserName(id int64) (string, error) {
@@ -309,9 +309,9 @@ func (r *coachRepository) GetWeeklyLoad(studentID int64, weeks int) ([]models.We
 	rows, err := r.db.Query(`
 		SELECT
 			DATE_FORMAT(DATE_SUB(due_date, INTERVAL WEEKDAY(due_date) DAY), '%Y-%m-%d') AS week_start,
-			SUM(CASE WHEN coach_id IS NOT NULL AND status = 'pending' THEN COALESCE(distance_km, 0) ELSE 0 END) AS planned_km,
+			SUM(CASE WHEN coach_id IS NOT NULL THEN COALESCE(distance_km, 0) ELSE 0 END) AS planned_km,
 			SUM(CASE WHEN status = 'completed' THEN COALESCE(result_distance_km, distance_km, 0) ELSE 0 END) AS actual_km,
-			SUM(CASE WHEN coach_id IS NOT NULL AND status = 'pending' THEN COALESCE(duration_seconds, 0) ELSE 0 END) AS planned_seconds,
+			SUM(CASE WHEN coach_id IS NOT NULL THEN COALESCE(duration_seconds, 0) ELSE 0 END) AS planned_seconds,
 			SUM(CASE WHEN status = 'completed' THEN COALESCE(result_time_seconds, duration_seconds, 0) ELSE 0 END) AS actual_seconds,
 			COUNT(CASE WHEN coach_id IS NOT NULL THEN 1 END) AS sessions_planned,
 			COUNT(CASE WHEN status = 'completed' THEN 1 END) AS sessions_completed,
