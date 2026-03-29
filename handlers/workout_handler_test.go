@@ -15,27 +15,63 @@ import (
 
 // mockWorkoutService is a test double for WorkoutServicer.
 type mockWorkoutService struct {
-	listFn    func(userID int64) ([]models.Workout, error)
+	listFn    func(userID int64, startDate, endDate string) ([]models.Workout, error)
 	getByIDFn func(id, userID int64) (models.Workout, error)
 	createFn  func(userID int64, req models.CreateWorkoutRequest) (models.Workout, error)
 	updateFn  func(id, userID int64, req models.UpdateWorkoutRequest) (models.Workout, error)
 	deleteFn  func(id, userID int64) error
 }
 
-func (m *mockWorkoutService) List(userID int64) ([]models.Workout, error) {
-	return m.listFn(userID)
+func (m *mockWorkoutService) List(userID int64, startDate, endDate string) ([]models.Workout, error) {
+	if m.listFn != nil {
+		return m.listFn(userID, startDate, endDate)
+	}
+	return nil, nil
 }
 func (m *mockWorkoutService) GetByID(id, userID int64) (models.Workout, error) {
-	return m.getByIDFn(id, userID)
+	if m.getByIDFn != nil {
+		return m.getByIDFn(id, userID)
+	}
+	return models.Workout{}, nil
 }
 func (m *mockWorkoutService) Create(userID int64, req models.CreateWorkoutRequest) (models.Workout, error) {
-	return m.createFn(userID, req)
+	if m.createFn != nil {
+		return m.createFn(userID, req)
+	}
+	return models.Workout{}, nil
 }
 func (m *mockWorkoutService) Update(id, userID int64, req models.UpdateWorkoutRequest) (models.Workout, error) {
-	return m.updateFn(id, userID, req)
+	if m.updateFn != nil {
+		return m.updateFn(id, userID, req)
+	}
+	return models.Workout{}, nil
 }
 func (m *mockWorkoutService) Delete(id, userID int64) error {
-	return m.deleteFn(id, userID)
+	if m.deleteFn != nil {
+		return m.deleteFn(id, userID)
+	}
+	return nil
+}
+func (m *mockWorkoutService) UpdateStatus(id, userID int64, req models.UpdateWorkoutStatusRequest) error {
+	return nil
+}
+func (m *mockWorkoutService) GetMyWorkouts(studentID int64, startDate, endDate string) ([]models.Workout, error) {
+	return nil, nil
+}
+func (m *mockWorkoutService) CreateCoachWorkout(coachID int64, req models.CreateCoachWorkoutRequest) (models.Workout, error) {
+	return models.Workout{}, nil
+}
+func (m *mockWorkoutService) ListCoachWorkouts(coachID int64, studentID *int64, statusFilter, startDate, endDate string, limit, offset int) ([]models.Workout, int, error) {
+	return nil, 0, nil
+}
+func (m *mockWorkoutService) GetCoachWorkout(workoutID, coachID int64) (models.Workout, error) {
+	return models.Workout{}, nil
+}
+func (m *mockWorkoutService) UpdateCoachWorkout(workoutID, coachID int64, req models.UpdateCoachWorkoutRequest) (models.Workout, error) {
+	return models.Workout{}, nil
+}
+func (m *mockWorkoutService) DeleteCoachWorkout(workoutID, coachID int64) error {
+	return nil
 }
 
 // newWorkoutReq builds an HTTP request with the given user ID injected in context.
@@ -54,8 +90,8 @@ func newWorkoutReq(method, path string, body []byte, userID int64) *http.Request
 
 func TestWorkoutHandler_List_ReturnsWorkouts(t *testing.T) {
 	mock := &mockWorkoutService{
-		listFn: func(userID int64) ([]models.Workout, error) {
-			return []models.Workout{{ID: 1, UserID: userID, Date: "2024-01-01"}}, nil
+		listFn: func(userID int64, startDate, endDate string) ([]models.Workout, error) {
+			return []models.Workout{{ID: 1, UserID: userID, DueDate: "2024-01-01"}}, nil
 		},
 	}
 	h := NewWorkoutHandler(mock)
@@ -77,7 +113,7 @@ func TestWorkoutHandler_List_ReturnsWorkouts(t *testing.T) {
 
 func TestWorkoutHandler_List_ServiceError_Returns500(t *testing.T) {
 	mock := &mockWorkoutService{
-		listFn: func(userID int64) ([]models.Workout, error) {
+		listFn: func(userID int64, startDate, endDate string) ([]models.Workout, error) {
 			return nil, errors.New("db error")
 		},
 	}
@@ -96,7 +132,7 @@ func TestWorkoutHandler_List_ServiceError_Returns500(t *testing.T) {
 func TestWorkoutHandler_Get_ReturnsWorkout(t *testing.T) {
 	mock := &mockWorkoutService{
 		getByIDFn: func(id, userID int64) (models.Workout, error) {
-			return models.Workout{ID: id, UserID: userID, Date: "2024-01-01"}, nil
+			return models.Workout{ID: id, UserID: userID, DueDate: "2024-01-01"}, nil
 		},
 	}
 	h := NewWorkoutHandler(mock)
@@ -148,13 +184,13 @@ func TestWorkoutHandler_Get_NotFound_Returns404(t *testing.T) {
 func TestWorkoutHandler_Create_ReturnsCreated(t *testing.T) {
 	mock := &mockWorkoutService{
 		createFn: func(userID int64, req models.CreateWorkoutRequest) (models.Workout, error) {
-			return models.Workout{ID: 10, UserID: userID, Date: req.Date}, nil
+			return models.Workout{ID: 10, UserID: userID, DueDate: req.DueDate}, nil
 		},
 	}
 	h := NewWorkoutHandler(mock)
 
 	body, _ := json.Marshal(models.CreateWorkoutRequest{
-		Date:     "2024-03-01",
+		DueDate:  "2024-03-01",
 		Segments: []models.SegmentRequest{{SegmentType: "simple"}},
 	})
 	w := httptest.NewRecorder()
@@ -188,16 +224,21 @@ func TestWorkoutHandler_Create_MissingDate_Returns400(t *testing.T) {
 	}
 }
 
-func TestWorkoutHandler_Create_NoSegments_Returns400(t *testing.T) {
-	h := NewWorkoutHandler(&mockWorkoutService{})
+func TestWorkoutHandler_Create_NoSegments_ReturnsCreated(t *testing.T) {
+	mock := &mockWorkoutService{
+		createFn: func(userID int64, req models.CreateWorkoutRequest) (models.Workout, error) {
+			return models.Workout{ID: 10, UserID: userID, DueDate: req.DueDate}, nil
+		},
+	}
+	h := NewWorkoutHandler(mock)
 
-	body, _ := json.Marshal(models.CreateWorkoutRequest{Date: "2024-03-01"})
+	body, _ := json.Marshal(models.CreateWorkoutRequest{DueDate: "2024-03-01"})
 	w := httptest.NewRecorder()
 
 	h.CreateWorkout(w, newWorkoutReq(http.MethodPost, "/api/workouts", body, 42))
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+	if w.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d", w.Code)
 	}
 }
 
@@ -222,7 +263,7 @@ func TestWorkoutHandler_Create_ServiceError_Returns500(t *testing.T) {
 	h := NewWorkoutHandler(mock)
 
 	body, _ := json.Marshal(models.CreateWorkoutRequest{
-		Date:     "2024-03-01",
+		DueDate:  "2024-03-01",
 		Segments: []models.SegmentRequest{{SegmentType: "simple"}},
 	})
 	w := httptest.NewRecorder()
@@ -278,16 +319,21 @@ func TestWorkoutHandler_Update_InvalidID_Returns400(t *testing.T) {
 	}
 }
 
-func TestWorkoutHandler_Update_NoSegments_Returns400(t *testing.T) {
-	h := NewWorkoutHandler(&mockWorkoutService{})
+func TestWorkoutHandler_Update_NoSegments_ReturnsOK(t *testing.T) {
+	mock := &mockWorkoutService{
+		updateFn: func(id, userID int64, req models.UpdateWorkoutRequest) (models.Workout, error) {
+			return models.Workout{ID: id, UserID: userID}, nil
+		},
+	}
+	h := NewWorkoutHandler(mock)
 
 	body, _ := json.Marshal(models.UpdateWorkoutRequest{})
 	w := httptest.NewRecorder()
 
 	h.UpdateWorkout(w, newWorkoutReq(http.MethodPut, "/api/workouts/5", body, 42))
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 }
 
