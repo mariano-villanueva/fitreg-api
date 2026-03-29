@@ -3,9 +3,14 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 
 	"github.com/fitreg/api/models"
 )
+
+// ErrStatusConflict is returned when a workout cannot be transitioned
+// because it is already in a terminal state (completed or skipped).
+var ErrStatusConflict = errors.New("workout already finalized")
 
 type workoutRepository struct {
 	db *sql.DB
