@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/fitreg/api/models"
 )
@@ -500,20 +501,60 @@ func (r *workoutRepository) ReplaceSegments(workoutID int64, segs []models.Segme
 		return err
 	}
 	defer tx.Rollback()
+
 	if _, err := tx.Exec("DELETE FROM workout_segments WHERE workout_id = ?", workoutID); err != nil {
 		return err
 	}
+
+	// tempIDToRealID maps client-assigned negative TempID values to DB-generated IDs.
+	tempIDToRealID := map[int64]int64{}
+
+	// Pass 1: insert root-level segments (ParentID is nil).
 	for i, seg := range segs {
+		if seg.ParentID != nil {
+			continue // child segment, handled in pass 2
+		}
+		result, err := tx.Exec(`
+			INSERT INTO workout_segments
+			  (workout_id, parent_id, order_index, segment_type, repetitions, value, unit, intensity,
+			   work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
+			VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, workoutID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
+			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity)
+		if err != nil {
+			return err
+		}
+		if seg.SegmentType == "block" && seg.TempID != nil {
+			realID, err := result.LastInsertId()
+			if err != nil {
+				return err
+			}
+			tempIDToRealID[*seg.TempID] = realID
+		}
+	}
+
+	// Pass 2: insert child segments (ParentID is not nil).
+	for _, seg := range segs {
+		if seg.ParentID == nil {
+			continue
+		}
+		realParentID, ok := tempIDToRealID[*seg.ParentID]
+		if !ok {
+			return fmt.Errorf("segment references unknown block temp_id %d", *seg.ParentID)
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO workout_segments
-			  (workout_id, order_index, segment_type, repetitions, value, unit, intensity,
+			  (workout_id, parent_id, order_index, segment_type, repetitions, value, unit, intensity,
 			   work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, workoutID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
-			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity); err != nil {
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, workoutID, realParentID, seg.OrderIndex, seg.SegmentType, seg.Repetitions,
+			seg.Value, seg.Unit, seg.Intensity,
+			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity,
+			seg.RestValue, seg.RestUnit, seg.RestIntensity); err != nil {
 			return err
 		}
 	}
+
 	return tx.Commit()
 }
 

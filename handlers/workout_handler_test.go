@@ -398,6 +398,55 @@ func TestWorkoutHandler_Delete_NotFound_Returns404(t *testing.T) {
 	}
 }
 
+func TestWorkoutHandler_Create_WithBlockSegments(t *testing.T) {
+	tempBlockID := int64(-1)
+	reqSegments := []models.SegmentRequest{
+		// root simple
+		{OrderIndex: 0, SegmentType: "simple", Value: 15, Unit: "min", Intensity: "easy"},
+		// block with TempID = -1
+		{TempID: &tempBlockID, OrderIndex: 1, SegmentType: "block", Repetitions: 3},
+		// children of block
+		{ParentID: &tempBlockID, OrderIndex: 0, SegmentType: "simple", Value: 1, Unit: "min", Intensity: "fast"},
+		{ParentID: &tempBlockID, OrderIndex: 1, SegmentType: "rest", Value: 1, Unit: "min"},
+	}
+
+	var capturedSegments []models.SegmentRequest
+	mock := &mockWorkoutService{
+		createFn: func(userID int64, req models.CreateWorkoutRequest) (models.Workout, error) {
+			capturedSegments = req.Segments
+			return models.Workout{ID: 1, UserID: userID, DueDate: req.DueDate}, nil
+		},
+	}
+	h := NewWorkoutHandler(mock)
+
+	body, _ := json.Marshal(models.CreateWorkoutRequest{
+		DueDate:  "2026-04-01",
+		Type:     "fartlek",
+		Segments: reqSegments,
+	})
+	w := httptest.NewRecorder()
+	h.CreateWorkout(w, newWorkoutReq(http.MethodPost, "/api/workouts", body, 42))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(capturedSegments) != 4 {
+		t.Fatalf("expected 4 segments passed to service, got %d", len(capturedSegments))
+	}
+	// verify block has TempID set
+	if capturedSegments[1].TempID == nil || *capturedSegments[1].TempID != -1 {
+		t.Error("expected block segment TempID = -1")
+	}
+	// verify child references block
+	if capturedSegments[2].ParentID == nil || *capturedSegments[2].ParentID != -1 {
+		t.Error("expected child segment ParentID = -1")
+	}
+	// verify rest type
+	if capturedSegments[3].SegmentType != "rest" {
+		t.Errorf("expected rest segment, got %s", capturedSegments[3].SegmentType)
+	}
+}
+
 func TestWorkoutHandler_GetWorkout_IncludesParentID(t *testing.T) {
 	blockParentID := int64(10)
 	mock := &mockWorkoutService{
