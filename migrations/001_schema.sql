@@ -441,15 +441,18 @@ CREATE TABLE assignment_messages (
 
 ALTER TABLE workout_segments
   ADD COLUMN parent_id BIGINT NULL,
+  ADD INDEX idx_ws_parent (parent_id),
   ADD CONSTRAINT fk_ws_parent FOREIGN KEY (parent_id) REFERENCES workout_segments(id) ON DELETE CASCADE,
   MODIFY COLUMN segment_type ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple';
 
 ALTER TABLE workout_template_segments
   ADD COLUMN parent_id BIGINT NULL,
+  ADD INDEX idx_wts_parent (parent_id),
   ADD CONSTRAINT fk_wts_parent FOREIGN KEY (parent_id) REFERENCES workout_template_segments(id) ON DELETE CASCADE,
   MODIFY COLUMN segment_type ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple';
 
 ALTER TABLE weekly_template_day_segments
   ADD COLUMN parent_id BIGINT NULL,
+  ADD INDEX idx_wtds_parent (parent_id),
   ADD CONSTRAINT fk_wtds_parent FOREIGN KEY (parent_id) REFERENCES weekly_template_day_segments(id) ON DELETE CASCADE,
   MODIFY COLUMN segment_type ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple';
