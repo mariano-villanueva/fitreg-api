@@ -3,6 +3,9 @@ package models
 // WeeklyTemplateSegmentRequest is used when creating/updating weekly template days.
 // Identical structure to SegmentRequest in coach.go and template.go.
 type WeeklyTemplateSegmentRequest struct {
+	TempID        *int64  `json:"temp_id"`    // client-assigned negative ID for block segments; nil otherwise
+	ParentID      *int64  `json:"parent_id"`  // references TempID of parent block; nil for root segments
+	OrderIndex    int     `json:"order_index"`
 	SegmentType   string  `json:"segment_type"`
 	Repetitions   int     `json:"repetitions"`
 	Value         float64 `json:"value"`
@@ -20,6 +23,7 @@ type WeeklyTemplateSegmentRequest struct {
 type WeeklyTemplateSegment struct {
 	ID                  int64   `json:"id"`
 	WeeklyTemplateDayID int64   `json:"weekly_template_day_id"`
+	ParentID            *int64  `json:"parent_id"`
 	OrderIndex          int     `json:"order_index"`
 	SegmentType         string  `json:"segment_type"`
 	Repetitions         int     `json:"repetitions"`

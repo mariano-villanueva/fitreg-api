@@ -18,6 +18,7 @@ type WorkoutTemplate struct {
 type TemplateSegment struct {
 	ID            int64   `json:"id"`
 	TemplateID    int64   `json:"template_id"`
+	ParentID      *int64  `json:"parent_id"`
 	OrderIndex    int     `json:"order_index"`
 	SegmentType   string  `json:"segment_type"`
 	Repetitions   int     `json:"repetitions"`

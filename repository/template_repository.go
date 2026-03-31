@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/fitreg/api/models"
@@ -157,7 +158,7 @@ func (r *templateRepository) Delete(id, coachID int64) (bool, error) {
 
 func (r *templateRepository) GetSegments(templateID int64) ([]models.TemplateSegment, error) {
 	rows, err := r.db.Query(`
-		SELECT id, template_id, order_index, segment_type, repetitions,
+		SELECT id, parent_id, template_id, order_index, segment_type, repetitions,
 			value, unit, intensity, work_value, work_unit, work_intensity,
 			rest_value, rest_unit, rest_intensity
 		FROM workout_template_segments
@@ -172,11 +173,16 @@ func (r *templateRepository) GetSegments(templateID int64) ([]models.TemplateSeg
 	segments := []models.TemplateSegment{}
 	for rows.Next() {
 		var s models.TemplateSegment
-		if err := rows.Scan(&s.ID, &s.TemplateID, &s.OrderIndex, &s.SegmentType,
+		var parentID sql.NullInt64
+		if err := rows.Scan(&s.ID, &parentID, &s.TemplateID, &s.OrderIndex, &s.SegmentType,
 			&s.Repetitions, &s.Value, &s.Unit, &s.Intensity,
 			&s.WorkValue, &s.WorkUnit, &s.WorkIntensity,
 			&s.RestValue, &s.RestUnit, &s.RestIntensity); err != nil {
 			return nil, err
+		}
+		if parentID.Valid {
+			v := parentID.Int64
+			s.ParentID = &v
 		}
 		segments = append(segments, s)
 	}
@@ -184,21 +190,66 @@ func (r *templateRepository) GetSegments(templateID int64) ([]models.TemplateSeg
 }
 
 func (r *templateRepository) ReplaceSegments(templateID int64, segs []models.SegmentRequest) error {
-	if _, err := r.db.Exec("DELETE FROM workout_template_segments WHERE template_id = ?", templateID); err != nil {
+	tx, err := r.db.Begin()
+	if err != nil {
 		return err
 	}
-	for i, seg := range segs {
-		if _, err := r.db.Exec(`
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM workout_template_segments WHERE template_id = ?", templateID); err != nil {
+		return err
+	}
+
+	// tempIDToRealID maps client-assigned negative TempID values to DB-generated IDs.
+	tempIDToRealID := map[int64]int64{}
+
+	// Pass 1: insert root-level segments (ParentID is nil).
+	for _, seg := range segs {
+		if seg.ParentID != nil {
+			continue // child segment, handled in pass 2
+		}
+		result, err := tx.Exec(`
 			INSERT INTO workout_template_segments
-				(template_id, order_index, segment_type, repetitions, value, unit, intensity,
-				 work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, templateID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
-			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity); err != nil {
+			  (template_id, parent_id, order_index, segment_type, repetitions, value, unit, intensity,
+			   work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
+			VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, templateID, seg.OrderIndex, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
+			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity)
+		if err != nil {
+			return err
+		}
+		if seg.SegmentType == "block" && seg.TempID != nil {
+			realID, err := result.LastInsertId()
+			if err != nil {
+				return err
+			}
+			tempIDToRealID[*seg.TempID] = realID
+		}
+	}
+
+	// Pass 2: insert child segments (ParentID is not nil).
+	for _, seg := range segs {
+		if seg.ParentID == nil {
+			continue
+		}
+		realParentID, ok := tempIDToRealID[*seg.ParentID]
+		if !ok {
+			return fmt.Errorf("segment references unknown block temp_id %d", *seg.ParentID)
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO workout_template_segments
+			  (template_id, parent_id, order_index, segment_type, repetitions, value, unit, intensity,
+			   work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, templateID, realParentID, seg.OrderIndex, seg.SegmentType, seg.Repetitions,
+			seg.Value, seg.Unit, seg.Intensity,
+			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity,
+			seg.RestValue, seg.RestUnit, seg.RestIntensity); err != nil {
 			return err
 		}
 	}
-	return nil
+
+	return tx.Commit()
 }
 
 func (r *templateRepository) GetCoachID(id int64) (int64, error) {
