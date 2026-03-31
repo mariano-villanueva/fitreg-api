@@ -11,8 +11,6 @@ DROP TABLE IF EXISTS workout_templates;
 DROP TABLE IF EXISTS notification_preferences;
 DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS assignment_messages;
-DROP TABLE IF EXISTS assigned_workout_segments;
-DROP TABLE IF EXISTS assigned_workouts;
 DROP TABLE IF EXISTS coach_ratings;
 DROP TABLE IF EXISTS coach_achievements;
 DROP TABLE IF EXISTS coach_students;
@@ -69,46 +67,78 @@ CREATE TABLE files (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- WORKOUTS
+-- WORKOUTS (unified: personal + coach-assigned)
+-- coach_id NULL = personal workout; coach_id set = assigned by coach
 -- ============================================================
 CREATE TABLE workouts (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id BIGINT NOT NULL,
-    date DATE NOT NULL,
-    distance_km DECIMAL(6,2) NOT NULL DEFAULT 0,
-    duration_seconds INT NOT NULL DEFAULT 0,
-    avg_pace VARCHAR(10),
-    calories INT DEFAULT 0,
-    avg_heart_rate INT DEFAULT 0,
-    feeling INT NULL,
-    type ENUM('easy','tempo','intervals','long_run','race','fartlek','other') DEFAULT 'easy',
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_workouts_user_id (user_id),
-    INDEX idx_workouts_date (date),
-    CONSTRAINT fk_workouts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  id                  BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id             BIGINT        NOT NULL,
+  coach_id            BIGINT        NULL,
+  title               VARCHAR(255)  NULL,
+  description         TEXT          NULL,
+  type                VARCHAR(50)   NULL,
+  notes               TEXT          NULL,
+  due_date            DATE          NOT NULL,
+  distance_km         DECIMAL(10,2) NULL,
+  duration_seconds    INT           NULL,
+  expected_fields     JSON          NULL,
+  result_distance_km  DECIMAL(10,2) NULL,
+  result_time_seconds INT           NULL,
+  result_heart_rate   INT           NULL,
+  result_feeling      INT           NULL,
+  avg_pace            VARCHAR(10)   NULL,
+  calories            INT           NULL,
+  image_file_id       BIGINT        NULL,
+  status              ENUM('pending','completed','skipped') NOT NULL DEFAULT 'completed',
+  created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)       REFERENCES users(id),
+  FOREIGN KEY (coach_id)      REFERENCES users(id),
+  FOREIGN KEY (image_file_id) REFERENCES files(id),
+  INDEX idx_workouts_user_due (user_id, due_date),
+  INDEX idx_workouts_coach (coach_id),
+  INDEX idx_workouts_due_date (due_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
 -- WORKOUT SEGMENTS
+-- parent_id NULL = root segment; parent_id set = child of a block
+-- segment_type 'block' = repeating container; 'rest' = recovery period
 -- ============================================================
 CREATE TABLE workout_segments (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    workout_id BIGINT NOT NULL,
-    order_index INT NOT NULL DEFAULT 0,
-    segment_type ENUM('simple','interval') NOT NULL DEFAULT 'simple',
-    repetitions INT DEFAULT 1,
-    value DECIMAL(10,2),
-    unit VARCHAR(10),
-    intensity VARCHAR(20),
-    work_value DECIMAL(10,2),
-    work_unit VARCHAR(10),
-    work_intensity VARCHAR(20),
-    rest_value DECIMAL(10,2),
-    rest_unit VARCHAR(10),
-    rest_intensity VARCHAR(20),
-    FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
+  id             BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  workout_id     BIGINT        NOT NULL,
+  parent_id      BIGINT        NULL,
+  order_index    INT           NOT NULL DEFAULT 0,
+  segment_type   ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple',
+  repetitions    INT           NOT NULL DEFAULT 1,
+  value          DECIMAL(10,2) NULL,
+  unit           VARCHAR(10)   NULL,
+  intensity      VARCHAR(20)   NULL,
+  work_value     DECIMAL(10,2) NULL,
+  work_unit      VARCHAR(10)   NULL,
+  work_intensity VARCHAR(20)   NULL,
+  rest_value     DECIMAL(10,2) NULL,
+  rest_unit      VARCHAR(10)   NULL,
+  rest_intensity VARCHAR(20)   NULL,
+  INDEX idx_ws_parent (parent_id),
+  FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_id)  REFERENCES workout_segments(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- ASSIGNMENT MESSAGES
+-- ============================================================
+CREATE TABLE assignment_messages (
+  id         BIGINT   NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  workout_id BIGINT   NOT NULL,
+  sender_id  BIGINT   NOT NULL,
+  body       TEXT     NOT NULL,
+  is_read    BOOLEAN  NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE,
+  FOREIGN KEY (sender_id)  REFERENCES users(id),
+  INDEX idx_am_unread (workout_id, sender_id, is_read)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -188,70 +218,6 @@ CREATE TABLE coach_ratings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- ASSIGNED WORKOUTS
--- ============================================================
-CREATE TABLE assigned_workouts (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    coach_id BIGINT NOT NULL,
-    student_id BIGINT NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    type VARCHAR(50),
-    distance_km DECIMAL(10,2),
-    duration_seconds INT,
-    notes TEXT,
-    expected_fields JSON NULL,
-    result_time_seconds INT NULL,
-    result_distance_km DECIMAL(10,2) NULL,
-    result_heart_rate INT NULL,
-    result_feeling INT NULL,
-    image_file_id BIGINT NULL,
-    status ENUM('pending','completed','skipped') NOT NULL DEFAULT 'pending',
-    due_date DATE,
-    created_at DATETIME NOT NULL DEFAULT NOW(),
-    updated_at DATETIME NOT NULL DEFAULT NOW() ON UPDATE NOW(),
-    FOREIGN KEY (coach_id) REFERENCES users(id),
-    FOREIGN KEY (student_id) REFERENCES users(id),
-    CONSTRAINT fk_assigned_workouts_image FOREIGN KEY (image_file_id) REFERENCES files(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- ASSIGNED WORKOUT SEGMENTS
--- ============================================================
-CREATE TABLE assigned_workout_segments (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    assigned_workout_id BIGINT NOT NULL,
-    order_index INT NOT NULL DEFAULT 0,
-    segment_type ENUM('simple','interval') NOT NULL DEFAULT 'simple',
-    repetitions INT DEFAULT 1,
-    value DECIMAL(10,2),
-    unit VARCHAR(10),
-    intensity VARCHAR(20),
-    work_value DECIMAL(10,2),
-    work_unit VARCHAR(10),
-    work_intensity VARCHAR(20),
-    rest_value DECIMAL(10,2),
-    rest_unit VARCHAR(10),
-    rest_intensity VARCHAR(20),
-    FOREIGN KEY (assigned_workout_id) REFERENCES assigned_workouts(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- ASSIGNMENT MESSAGES
--- ============================================================
-CREATE TABLE assignment_messages (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    assigned_workout_id BIGINT NOT NULL,
-    sender_id BIGINT NOT NULL,
-    body TEXT NOT NULL,
-    is_read BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at DATETIME NOT NULL DEFAULT NOW(),
-    FOREIGN KEY (assigned_workout_id) REFERENCES assigned_workouts(id) ON DELETE CASCADE,
-    FOREIGN KEY (sender_id) REFERENCES users(id),
-    INDEX idx_assignment_messages_unread (assigned_workout_id, sender_id, is_read)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
 -- NOTIFICATIONS
 -- ============================================================
 CREATE TABLE notifications (
@@ -282,7 +248,7 @@ CREATE TABLE notification_preferences (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
--- WORKOUT TEMPLATES
+-- WORKOUT TEMPLATES (daily templates)
 -- ============================================================
 CREATE TABLE workout_templates (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -299,21 +265,24 @@ CREATE TABLE workout_templates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE workout_template_segments (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    template_id BIGINT NOT NULL,
-    order_index INT NOT NULL DEFAULT 0,
-    segment_type ENUM('simple','interval') NOT NULL DEFAULT 'simple',
-    repetitions INT DEFAULT 1,
-    value DECIMAL(10,2),
-    unit VARCHAR(10),
-    intensity VARCHAR(20),
-    work_value DECIMAL(10,2),
-    work_unit VARCHAR(10),
+    id          BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    template_id BIGINT        NOT NULL,
+    parent_id   BIGINT        NULL,
+    order_index INT           NOT NULL DEFAULT 0,
+    segment_type ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple',
+    repetitions INT           DEFAULT 1,
+    value       DECIMAL(10,2),
+    unit        VARCHAR(10),
+    intensity   VARCHAR(20),
+    work_value  DECIMAL(10,2),
+    work_unit   VARCHAR(10),
     work_intensity VARCHAR(20),
-    rest_value DECIMAL(10,2),
-    rest_unit VARCHAR(10),
+    rest_value  DECIMAL(10,2),
+    rest_unit   VARCHAR(10),
     rest_intensity VARCHAR(20),
-    FOREIGN KEY (template_id) REFERENCES workout_templates(id) ON DELETE CASCADE
+    INDEX idx_wts_parent (parent_id),
+    FOREIGN KEY (template_id) REFERENCES workout_templates(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_id)   REFERENCES workout_template_segments(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
@@ -350,109 +319,22 @@ CREATE TABLE weekly_template_days (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE weekly_template_day_segments (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    weekly_template_day_id BIGINT NOT NULL,
-    order_index INT NOT NULL DEFAULT 0,
-    segment_type ENUM('simple','interval') NOT NULL DEFAULT 'simple',
-    repetitions INT DEFAULT 1,
-    value DECIMAL(10,2),
-    unit VARCHAR(10),
-    intensity VARCHAR(20),
-    work_value DECIMAL(10,2),
-    work_unit VARCHAR(10),
-    work_intensity VARCHAR(20),
-    rest_value DECIMAL(10,2),
-    rest_unit VARCHAR(10),
-    rest_intensity VARCHAR(20),
-    FOREIGN KEY (weekly_template_day_id) REFERENCES weekly_template_days(id) ON DELETE CASCADE
+    id                     BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    weekly_template_day_id BIGINT        NOT NULL,
+    parent_id              BIGINT        NULL,
+    order_index            INT           NOT NULL DEFAULT 0,
+    segment_type           ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple',
+    repetitions            INT           DEFAULT 1,
+    value                  DECIMAL(10,2),
+    unit                   VARCHAR(10),
+    intensity              VARCHAR(20),
+    work_value             DECIMAL(10,2),
+    work_unit              VARCHAR(10),
+    work_intensity         VARCHAR(20),
+    rest_value             DECIMAL(10,2),
+    rest_unit              VARCHAR(10),
+    rest_intensity         VARCHAR(20),
+    INDEX idx_wtds_parent (parent_id),
+    FOREIGN KEY (weekly_template_day_id) REFERENCES weekly_template_days(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_id)              REFERENCES weekly_template_day_segments(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================
--- 2026-03-29: Unify workouts + assigned_workouts
--- ============================================================
-DROP TABLE IF EXISTS assigned_workout_segments;
-DROP TABLE IF EXISTS workout_segments;
-DROP TABLE IF EXISTS assignment_messages;
-DROP TABLE IF EXISTS assigned_workouts;
-DROP TABLE IF EXISTS workouts;
-
-CREATE TABLE workouts (
-  id                  BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  user_id             BIGINT        NOT NULL,
-  coach_id            BIGINT        NULL,
-  title               VARCHAR(255)  NULL,
-  description         TEXT          NULL,
-  type                VARCHAR(50)   NULL,
-  notes               TEXT          NULL,
-  due_date            DATE          NOT NULL,
-  distance_km         DECIMAL(10,2) NULL,
-  duration_seconds    INT           NULL,
-  expected_fields     JSON          NULL,
-  result_distance_km  DECIMAL(10,2) NULL,
-  result_time_seconds INT           NULL,
-  result_heart_rate   INT           NULL,
-  result_feeling      INT           NULL,
-  avg_pace            VARCHAR(10)   NULL,
-  calories            INT           NULL,
-  image_file_id       BIGINT        NULL,
-  status              ENUM('pending','completed','skipped') NOT NULL DEFAULT 'completed',
-  created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id)       REFERENCES users(id),
-  FOREIGN KEY (coach_id)      REFERENCES users(id),
-  FOREIGN KEY (image_file_id) REFERENCES files(id),
-  INDEX idx_workouts_user_due (user_id, due_date),
-  INDEX idx_workouts_coach (coach_id),
-  INDEX idx_workouts_due_date (due_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE workout_segments (
-  id             BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  workout_id     BIGINT        NOT NULL,
-  order_index    INT           NOT NULL DEFAULT 0,
-  segment_type   ENUM('simple','interval') NOT NULL DEFAULT 'simple',
-  repetitions    INT           NOT NULL DEFAULT 1,
-  value          DECIMAL(10,2) NULL,
-  unit           VARCHAR(10)   NULL,
-  intensity      VARCHAR(20)   NULL,
-  work_value     DECIMAL(10,2) NULL,
-  work_unit      VARCHAR(10)   NULL,
-  work_intensity VARCHAR(20)   NULL,
-  rest_value     DECIMAL(10,2) NULL,
-  rest_unit      VARCHAR(10)   NULL,
-  rest_intensity VARCHAR(20)   NULL,
-  FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE assignment_messages (
-  id         BIGINT   NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  workout_id BIGINT   NOT NULL,
-  sender_id  BIGINT   NOT NULL,
-  body       TEXT     NOT NULL,
-  is_read    BOOLEAN  NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE,
-  FOREIGN KEY (sender_id)  REFERENCES users(id),
-  INDEX idx_am_unread (workout_id, sender_id, is_read)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Migration: structured workout blocks
--- Adds parent_id (for block children) and extends segment_type ENUM
-
-ALTER TABLE workout_segments
-  ADD COLUMN parent_id BIGINT NULL,
-  ADD INDEX idx_ws_parent (parent_id),
-  ADD CONSTRAINT fk_ws_parent FOREIGN KEY (parent_id) REFERENCES workout_segments(id) ON DELETE CASCADE,
-  MODIFY COLUMN segment_type ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple';
-
-ALTER TABLE workout_template_segments
-  ADD COLUMN parent_id BIGINT NULL,
-  ADD INDEX idx_wts_parent (parent_id),
-  ADD CONSTRAINT fk_wts_parent FOREIGN KEY (parent_id) REFERENCES workout_template_segments(id) ON DELETE CASCADE,
-  MODIFY COLUMN segment_type ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple';
-
-ALTER TABLE weekly_template_day_segments
-  ADD COLUMN parent_id BIGINT NULL,
-  ADD INDEX idx_wtds_parent (parent_id),
-  ADD CONSTRAINT fk_wtds_parent FOREIGN KEY (parent_id) REFERENCES weekly_template_day_segments(id) ON DELETE CASCADE,
-  MODIFY COLUMN segment_type ENUM('simple','interval','rest','block') NOT NULL DEFAULT 'simple';
