@@ -464,7 +464,7 @@ func (r *workoutRepository) UpdateStatus(workoutID, studentID int64, req models.
 
 func (r *workoutRepository) GetSegments(workoutID int64) ([]models.WorkoutSegment, error) {
 	rows, err := r.db.Query(`
-		SELECT id, workout_id, order_index, segment_type, COALESCE(repetitions, 1),
+		SELECT id, parent_id, workout_id, order_index, segment_type, COALESCE(repetitions, 1),
 			COALESCE(value, 0), COALESCE(unit, ''), COALESCE(intensity, ''),
 			COALESCE(work_value, 0), COALESCE(work_unit, ''), COALESCE(work_intensity, ''),
 			COALESCE(rest_value, 0), COALESCE(rest_unit, ''), COALESCE(rest_intensity, '')
@@ -478,11 +478,16 @@ func (r *workoutRepository) GetSegments(workoutID int64) ([]models.WorkoutSegmen
 	segments := []models.WorkoutSegment{}
 	for rows.Next() {
 		var s models.WorkoutSegment
-		if err := rows.Scan(&s.ID, &s.WorkoutID, &s.OrderIndex, &s.SegmentType, &s.Repetitions,
+		var parentID sql.NullInt64
+		if err := rows.Scan(&s.ID, &parentID, &s.WorkoutID, &s.OrderIndex, &s.SegmentType, &s.Repetitions,
 			&s.Value, &s.Unit, &s.Intensity,
 			&s.WorkValue, &s.WorkUnit, &s.WorkIntensity,
 			&s.RestValue, &s.RestUnit, &s.RestIntensity); err != nil {
 			return nil, err
+		}
+		if parentID.Valid {
+			v := parentID.Int64
+			s.ParentID = &v
 		}
 		segments = append(segments, s)
 	}

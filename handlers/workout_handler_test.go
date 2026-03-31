@@ -397,3 +397,43 @@ func TestWorkoutHandler_Delete_NotFound_Returns404(t *testing.T) {
 		t.Errorf("expected 404, got %d", w.Code)
 	}
 }
+
+func TestWorkoutHandler_GetWorkout_IncludesParentID(t *testing.T) {
+	blockParentID := int64(10)
+	mock := &mockWorkoutService{
+		getByIDFn: func(id, userID int64) (models.Workout, error) {
+			return models.Workout{
+				ID:     id,
+				UserID: userID,
+				Segments: []models.WorkoutSegment{
+					{ID: 10, ParentID: nil, OrderIndex: 0, SegmentType: "block", Repetitions: 3},
+					{ID: 11, ParentID: &blockParentID, OrderIndex: 0, SegmentType: "simple", Value: 1, Unit: "min", Intensity: "fast"},
+					{ID: 12, ParentID: &blockParentID, OrderIndex: 1, SegmentType: "rest", Value: 1, Unit: "min"},
+				},
+			}, nil
+		},
+	}
+	h := NewWorkoutHandler(mock)
+	w := httptest.NewRecorder()
+	h.GetWorkout(w, newWorkoutReq(http.MethodGet, "/api/workouts/1", nil, 42))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp models.Workout
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Segments) != 3 {
+		t.Fatalf("expected 3 segments, got %d", len(resp.Segments))
+	}
+	if resp.Segments[0].ParentID != nil {
+		t.Error("expected block segment to have nil parent_id")
+	}
+	if resp.Segments[1].ParentID == nil || *resp.Segments[1].ParentID != 10 {
+		t.Error("expected child segment parent_id = 10")
+	}
+	if resp.Segments[2].SegmentType != "rest" {
+		t.Errorf("expected rest segment, got %s", resp.Segments[2].SegmentType)
+	}
+}
