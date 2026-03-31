@@ -17,7 +17,7 @@
 | File | Change |
 |------|--------|
 | `migrations/001_schema.sql` | Add migration block for `parent_id` + ENUM extension on 3 tables |
-| `models/workout.go` | Add `ParentID *int64` + `TempID *int64` to `WorkoutSegment` and `SegmentRequest` |
+| `models/coach.go` | Add `ParentID *int64` + `TempID *int64` to `WorkoutSegment` and `SegmentRequest` |
 | `repository/workout_repository.go` | Update `GetSegments` (select parent_id); rewrite `ReplaceSegments` (two-pass) |
 | `repository/template_repository.go` | Same segment changes for `workout_template_segments` |
 | `repository/weekly_template_repository.go` | Same segment changes for `weekly_template_day_segments` |
@@ -94,13 +94,13 @@ git commit -m "feat: add parent_id and rest/block segment types to schema"
 ## Task 2: Go Model — Add ParentID and TempID
 
 **Files:**
-- Modify: `models/workout.go`
+- Modify: `models/coach.go`
 
 Find `WorkoutSegment` struct and `SegmentRequest` struct. Add `ParentID` and `TempID` fields to both.
 
 - [ ] **Step 1: Update WorkoutSegment**
 
-In `models/workout.go`, find the `WorkoutSegment` struct (search for `type WorkoutSegment struct`). It currently starts with:
+In `models/coach.go`, find the `WorkoutSegment` struct (search for `type WorkoutSegment struct`). It currently starts with:
 ```go
 type WorkoutSegment struct {
     ID            int64   `json:"id"`
@@ -133,7 +133,7 @@ type WorkoutSegment struct {
 
 - [ ] **Step 2: Update SegmentRequest**
 
-Find `type SegmentRequest struct` (it may be in `models/workout.go` or a separate file — run `grep -r "type SegmentRequest" ~/Desktop/FitReg/FitRegAPI/`). Add `TempID` and `ParentID`:
+Find `type SegmentRequest struct` (it may be in `models/coach.go` or a separate file — run `grep -r "type SegmentRequest" ~/Desktop/FitReg/FitRegAPI/`). Add `TempID` and `ParentID`:
 
 ```go
 type SegmentRequest struct {
