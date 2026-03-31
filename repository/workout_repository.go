@@ -510,7 +510,7 @@ func (r *workoutRepository) ReplaceSegments(workoutID int64, segs []models.Segme
 	tempIDToRealID := map[int64]int64{}
 
 	// Pass 1: insert root-level segments (ParentID is nil).
-	for i, seg := range segs {
+	for _, seg := range segs {
 		if seg.ParentID != nil {
 			continue // child segment, handled in pass 2
 		}
@@ -519,7 +519,7 @@ func (r *workoutRepository) ReplaceSegments(workoutID int64, segs []models.Segme
 			  (workout_id, parent_id, order_index, segment_type, repetitions, value, unit, intensity,
 			   work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
 			VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, workoutID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
+		`, workoutID, seg.OrderIndex, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
 			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity)
 		if err != nil {
 			return err
