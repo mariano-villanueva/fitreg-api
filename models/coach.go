@@ -15,6 +15,7 @@ type CoachStudent struct {
 
 type WorkoutSegment struct {
 	ID            int64   `json:"id"`
+	ParentID      *int64  `json:"parent_id"`
 	WorkoutID     int64   `json:"workout_id"`
 	OrderIndex    int     `json:"order_index"`
 	SegmentType   string  `json:"segment_type"`
@@ -117,6 +118,9 @@ type CoachListItem struct {
 }
 
 type SegmentRequest struct {
+	TempID        *int64  `json:"temp_id"`    // client-assigned negative ID for block segments; nil otherwise
+	ParentID      *int64  `json:"parent_id"`  // references TempID of parent block; nil for root segments
+	OrderIndex    int     `json:"order_index"`
 	SegmentType   string  `json:"segment_type"`
 	Repetitions   int     `json:"repetitions"`
 	Value         float64 `json:"value"`
