@@ -16,24 +16,24 @@ func NewAssignmentMessageRepository(db *sql.DB) AssignmentMessageRepository {
 	return &assignmentMessageRepository{db: db}
 }
 
-func (r *assignmentMessageRepository) GetParticipants(awID int64) (int64, int64, string, string, error) {
+func (r *assignmentMessageRepository) GetParticipants(workoutID int64) (int64, int64, string, string, error) {
 	var coachID, studentID int64
 	var status, title string
 	err := r.db.QueryRow(
-		"SELECT coach_id, student_id, status, title FROM assigned_workouts WHERE id = ?", awID,
+		"SELECT coach_id, user_id, status, COALESCE(title,'') FROM workouts WHERE id = ?", workoutID,
 	).Scan(&coachID, &studentID, &status, &title)
 	return coachID, studentID, status, title, err
 }
 
-func (r *assignmentMessageRepository) List(awID int64) ([]models.AssignmentMessage, error) {
+func (r *assignmentMessageRepository) List(workoutID int64) ([]models.AssignmentMessage, error) {
 	rows, err := r.db.Query(`
-		SELECT am.id, am.assigned_workout_id, am.sender_id, u.name, u.avatar_url,
+		SELECT am.id, am.workout_id, am.sender_id, u.name, u.avatar_url,
 			am.body, am.is_read, am.created_at
 		FROM assignment_messages am
 		JOIN users u ON u.id = am.sender_id
-		WHERE am.assigned_workout_id = ?
+		WHERE am.workout_id = ?
 		ORDER BY am.created_at ASC
-	`, awID)
+	`, workoutID)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +42,7 @@ func (r *assignmentMessageRepository) List(awID int64) ([]models.AssignmentMessa
 	for rows.Next() {
 		var m models.AssignmentMessage
 		var avatar sql.NullString
-		if err := rows.Scan(&m.ID, &m.AssignedWorkoutID, &m.SenderID, &m.SenderName, &avatar,
+		if err := rows.Scan(&m.ID, &m.WorkoutID, &m.SenderID, &m.SenderName, &avatar,
 			&m.Body, &m.IsRead, &m.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -51,13 +51,16 @@ func (r *assignmentMessageRepository) List(awID int64) ([]models.AssignmentMessa
 		}
 		messages = append(messages, m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return messages, nil
 }
 
-func (r *assignmentMessageRepository) Create(awID, senderID int64, body string) (models.AssignmentMessage, error) {
+func (r *assignmentMessageRepository) Create(workoutID, senderID int64, body string) (models.AssignmentMessage, error) {
 	result, err := r.db.Exec(
-		"INSERT INTO assignment_messages (assigned_workout_id, sender_id, body) VALUES (?, ?, ?)",
-		awID, senderID, body,
+		"INSERT INTO assignment_messages (workout_id, sender_id, body) VALUES (?, ?, ?)",
+		workoutID, senderID, body,
 	)
 	if err != nil {
 		return models.AssignmentMessage{}, err
@@ -66,12 +69,12 @@ func (r *assignmentMessageRepository) Create(awID, senderID int64, body string) 
 	var m models.AssignmentMessage
 	var avatar sql.NullString
 	err = r.db.QueryRow(`
-		SELECT am.id, am.assigned_workout_id, am.sender_id, u.name, u.avatar_url,
+		SELECT am.id, am.workout_id, am.sender_id, u.name, u.avatar_url,
 			am.body, am.is_read, am.created_at
 		FROM assignment_messages am
 		JOIN users u ON u.id = am.sender_id
 		WHERE am.id = ?
-	`, msgID).Scan(&m.ID, &m.AssignedWorkoutID, &m.SenderID, &m.SenderName, &avatar,
+	`, msgID).Scan(&m.ID, &m.WorkoutID, &m.SenderID, &m.SenderName, &avatar,
 		&m.Body, &m.IsRead, &m.CreatedAt)
 	if err != nil {
 		return models.AssignmentMessage{}, err
@@ -82,95 +85,90 @@ func (r *assignmentMessageRepository) Create(awID, senderID int64, body string) 
 	return m, nil
 }
 
-func (r *assignmentMessageRepository) MarkRead(awID, userID int64) error {
+func (r *assignmentMessageRepository) MarkRead(workoutID, userID int64) error {
 	_, err := r.db.Exec(
-		"UPDATE assignment_messages SET is_read = TRUE WHERE assigned_workout_id = ? AND sender_id != ?",
-		awID, userID,
+		"UPDATE assignment_messages SET is_read = TRUE WHERE workout_id = ? AND sender_id != ?",
+		workoutID, userID,
 	)
 	return err
 }
 
-func (r *assignmentMessageRepository) GetAssignedWorkoutDetail(awID, userID int64) (models.AssignedWorkout, error) {
-	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields, workoutType sql.NullString
+func (r *assignmentMessageRepository) GetWorkoutDetail(workoutID, userID int64) (models.Workout, error) {
+	var wo models.Workout
+	var coachID sql.NullInt64
+	var title, description, workoutType, notes, avgPace sql.NullString
 	var distanceKm sql.NullFloat64
-	var durationSeconds sql.NullInt64
+	var durationSeconds, calories sql.NullInt64
+	var expectedFields sql.NullString
+	var resultDistKm sql.NullFloat64
+	var resultTimeSec, resultHR, resultFeeling, imageFileID sql.NullInt64
+	var dueDate sql.NullString
 	var studentName, coachName string
+	var unread int
+
 	err := r.db.QueryRow(`
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at,
+		SELECT w.id, w.user_id, w.coach_id, w.title, w.description, w.type,
+			w.distance_km, w.duration_seconds, w.notes, w.expected_fields,
+			w.result_time_seconds, w.result_distance_km, w.result_heart_rate, w.result_feeling,
+			w.image_file_id, w.status, w.due_date, w.avg_pace, w.calories,
+			w.created_at, w.updated_at,
 			us.name AS student_name, uc.name AS coach_name,
 			(SELECT COUNT(*) FROM assignment_messages am
-				WHERE am.assigned_workout_id = aw.id AND am.sender_id != ? AND am.is_read = FALSE) AS unread_message_count
-		FROM assigned_workouts aw
-		JOIN users us ON us.id = aw.student_id
-		JOIN users uc ON uc.id = aw.coach_id
-		WHERE aw.id = ? AND (aw.coach_id = ? OR aw.student_id = ?)
-	`, userID, awID, userID, userID).Scan(
-		&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
+				WHERE am.workout_id = w.id AND am.sender_id != ? AND am.is_read = FALSE) AS unread_count
+		FROM workouts w
+		JOIN users us ON us.id = w.user_id
+		JOIN users uc ON uc.id = w.coach_id
+		WHERE w.id = ? AND w.coach_id IS NOT NULL AND (w.coach_id = ? OR w.user_id = ?)
+	`, userID, workoutID, userID, userID).Scan(
+		&wo.ID, &wo.UserID, &coachID,
+		&title, &description, &workoutType,
 		&distanceKm, &durationSeconds, &notes, &expectedFields,
-		&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-		&aw.ImageFileID, &aw.Status, &dueDate,
-		&aw.CreatedAt, &aw.UpdatedAt,
-		&studentName, &coachName, &aw.UnreadMessageCount,
+		&resultTimeSec, &resultDistKm, &resultHR, &resultFeeling,
+		&imageFileID, &wo.Status, &dueDate, &avgPace, &calories,
+		&wo.CreatedAt, &wo.UpdatedAt,
+		&studentName, &coachName, &unread,
 	)
 	if err != nil {
-		return models.AssignedWorkout{}, err
+		return models.Workout{}, err
 	}
-	if workoutType.Valid {
-		aw.Type = workoutType.String
+	if coachID.Valid {
+		v := coachID.Int64
+		wo.CoachID = &v
 	}
-	if distanceKm.Valid {
-		aw.DistanceKm = distanceKm.Float64
+	if title.Valid { wo.Title = title.String }
+	if description.Valid { wo.Description = description.String }
+	if workoutType.Valid { wo.Type = workoutType.String }
+	if notes.Valid { wo.Notes = notes.String }
+	if dueDate.Valid { wo.DueDate = truncateDate(dueDate.String) }
+	if distanceKm.Valid { wo.DistanceKm = distanceKm.Float64 }
+	if durationSeconds.Valid { wo.DurationSeconds = int(durationSeconds.Int64) }
+	if expectedFields.Valid { wo.ExpectedFields = json.RawMessage(expectedFields.String) }
+	if resultDistKm.Valid {
+		v := resultDistKm.Float64
+		wo.ResultDistanceKm = &v
 	}
-	if durationSeconds.Valid {
-		aw.DurationSeconds = int(durationSeconds.Int64)
+	if resultTimeSec.Valid {
+		v := int(resultTimeSec.Int64)
+		wo.ResultTimeSeconds = &v
 	}
-	if description.Valid {
-		aw.Description = description.String
+	if resultHR.Valid {
+		v := int(resultHR.Int64)
+		wo.ResultHeartRate = &v
 	}
-	if notes.Valid {
-		aw.Notes = notes.String
+	if resultFeeling.Valid {
+		v := int(resultFeeling.Int64)
+		wo.ResultFeeling = &v
 	}
-	if dueDate.Valid {
-		aw.DueDate = truncateDate(dueDate.String)
+	if avgPace.Valid { wo.AvgPace = avgPace.String }
+	if calories.Valid { wo.Calories = int(calories.Int64) }
+	if imageFileID.Valid {
+		v := imageFileID.Int64
+		wo.ImageFileID = &v
 	}
-	if expectedFields.Valid {
-		aw.ExpectedFields = json.RawMessage(expectedFields.String)
-	}
-	aw.StudentName = studentName
-	aw.CoachName = coachName
-	return aw, nil
-}
-
-func (r *assignmentMessageRepository) FetchSegments(awID int64) []models.WorkoutSegment {
-	rows, err := r.db.Query(`
-		SELECT id, assigned_workout_id, order_index, segment_type, repetitions,
-			value, unit, intensity, work_value, work_unit, work_intensity,
-			rest_value, rest_unit, rest_intensity
-		FROM assigned_workout_segments
-		WHERE assigned_workout_id = ?
-		ORDER BY order_index ASC
-	`, awID)
-	if err != nil {
-		return []models.WorkoutSegment{}
-	}
-	defer rows.Close()
-	segments := []models.WorkoutSegment{}
-	for rows.Next() {
-		var s models.WorkoutSegment
-		if err := rows.Scan(&s.ID, &s.AssignedWorkoutID, &s.OrderIndex, &s.SegmentType,
-			&s.Repetitions, &s.Value, &s.Unit, &s.Intensity,
-			&s.WorkValue, &s.WorkUnit, &s.WorkIntensity,
-			&s.RestValue, &s.RestUnit, &s.RestIntensity); err != nil {
-			continue
-		}
-		segments = append(segments, s)
-	}
-	return segments
+	wo.UserName = studentName
+	wo.CoachName = coachName
+	wo.UnreadMessageCount = unread
+	return wo, nil
 }
 
 func (r *assignmentMessageRepository) GetFileUUID(fileID int64) (string, error) {
@@ -180,7 +178,7 @@ func (r *assignmentMessageRepository) GetFileUUID(fileID int64) (string, error) 
 }
 
 // truncateDate trims a datetime string to date only (first 10 chars).
-// Used by GetAssignedWorkoutDetail and coach_repository.go (same package).
+// Used by GetWorkoutDetail and coach_repository.go (same package).
 func truncateDate(s string) string {
 	if len(s) >= 10 {
 		return s[:10]

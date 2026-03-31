@@ -15,23 +15,23 @@ import (
 )
 
 type mockAssignmentMessageService struct {
-	listMessagesFn            func(awID, userID int64) ([]models.AssignmentMessage, error)
-	sendMessageFn             func(awID, senderID int64, body string) (models.AssignmentMessage, error)
-	markReadFn                func(awID, userID int64) error
-	getAssignedWorkoutDetailFn func(awID, userID int64) (models.AssignedWorkout, error)
+	listMessagesFn         func(workoutID, userID int64) ([]models.AssignmentMessage, error)
+	sendMessageFn          func(workoutID, senderID int64, body string) (models.AssignmentMessage, error)
+	markReadFn             func(workoutID, userID int64) error
+	getWorkoutDetailFn     func(workoutID, userID int64) (models.Workout, error)
 }
 
-func (m *mockAssignmentMessageService) ListMessages(awID, userID int64) ([]models.AssignmentMessage, error) {
-	return m.listMessagesFn(awID, userID)
+func (m *mockAssignmentMessageService) ListMessages(workoutID, userID int64) ([]models.AssignmentMessage, error) {
+	return m.listMessagesFn(workoutID, userID)
 }
-func (m *mockAssignmentMessageService) SendMessage(awID, senderID int64, body string) (models.AssignmentMessage, error) {
-	return m.sendMessageFn(awID, senderID, body)
+func (m *mockAssignmentMessageService) SendMessage(workoutID, senderID int64, body string) (models.AssignmentMessage, error) {
+	return m.sendMessageFn(workoutID, senderID, body)
 }
-func (m *mockAssignmentMessageService) MarkRead(awID, userID int64) error {
-	return m.markReadFn(awID, userID)
+func (m *mockAssignmentMessageService) MarkRead(workoutID, userID int64) error {
+	return m.markReadFn(workoutID, userID)
 }
-func (m *mockAssignmentMessageService) GetAssignedWorkoutDetail(awID, userID int64) (models.AssignedWorkout, error) {
-	return m.getAssignedWorkoutDetailFn(awID, userID)
+func (m *mockAssignmentMessageService) GetWorkoutDetail(workoutID, userID int64) (models.Workout, error) {
+	return m.getWorkoutDetailFn(workoutID, userID)
 }
 
 func newMsgReq(method, path string, body []byte, userID int64) *http.Request {
@@ -225,12 +225,12 @@ func TestAssignmentMessageHandler_MarkRead_ServiceError_Returns500(t *testing.T)
 	}
 }
 
-// --- GetAssignedWorkoutDetail ---
+// --- GetWorkoutDetail ---
 
 func TestAssignmentMessageHandler_GetDetail_ReturnsWorkout(t *testing.T) {
 	mock := &mockAssignmentMessageService{
-		getAssignedWorkoutDetailFn: func(awID, userID int64) (models.AssignedWorkout, error) {
-			return models.AssignedWorkout{ID: awID, Title: "Long Run"}, nil
+		getWorkoutDetailFn: func(workoutID, userID int64) (models.Workout, error) {
+			return models.Workout{ID: workoutID, Title: "Long Run"}, nil
 		},
 	}
 	h := NewAssignmentMessageHandler(mock)
@@ -241,7 +241,7 @@ func TestAssignmentMessageHandler_GetDetail_ReturnsWorkout(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	var resp models.AssignedWorkout
+	var resp models.Workout
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -252,8 +252,8 @@ func TestAssignmentMessageHandler_GetDetail_ReturnsWorkout(t *testing.T) {
 
 func TestAssignmentMessageHandler_GetDetail_NotFound_Returns404(t *testing.T) {
 	mock := &mockAssignmentMessageService{
-		getAssignedWorkoutDetailFn: func(awID, userID int64) (models.AssignedWorkout, error) {
-			return models.AssignedWorkout{}, services.ErrNotFound
+		getWorkoutDetailFn: func(workoutID, userID int64) (models.Workout, error) {
+			return models.Workout{}, services.ErrNotFound
 		},
 	}
 	h := NewAssignmentMessageHandler(mock)

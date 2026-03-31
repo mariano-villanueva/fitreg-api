@@ -17,8 +17,8 @@ func NewAssignmentMessageService(repo repository.AssignmentMessageRepository, no
 	return &AssignmentMessageService{repo: repo, notifSvc: notifSvc}
 }
 
-func (s *AssignmentMessageService) ListMessages(awID, userID int64) ([]models.AssignmentMessage, error) {
-	coachID, studentID, _, _, err := s.repo.GetParticipants(awID)
+func (s *AssignmentMessageService) ListMessages(workoutID, userID int64) ([]models.AssignmentMessage, error) {
+	coachID, studentID, _, _, err := s.repo.GetParticipants(workoutID)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -28,11 +28,11 @@ func (s *AssignmentMessageService) ListMessages(awID, userID int64) ([]models.As
 	if userID != coachID && userID != studentID {
 		return nil, ErrForbidden
 	}
-	return s.repo.List(awID)
+	return s.repo.List(workoutID)
 }
 
-func (s *AssignmentMessageService) SendMessage(awID, senderID int64, body string) (models.AssignmentMessage, error) {
-	coachID, studentID, status, title, err := s.repo.GetParticipants(awID)
+func (s *AssignmentMessageService) SendMessage(workoutID, senderID int64, body string) (models.AssignmentMessage, error) {
+	coachID, studentID, status, title, err := s.repo.GetParticipants(workoutID)
 	if err == sql.ErrNoRows {
 		return models.AssignmentMessage{}, ErrNotFound
 	}
@@ -46,7 +46,7 @@ func (s *AssignmentMessageService) SendMessage(awID, senderID int64, body string
 		return models.AssignmentMessage{}, errors.New("cannot send messages on a non-pending assignment")
 	}
 
-	msg, err := s.repo.Create(awID, senderID, body)
+	msg, err := s.repo.Create(workoutID, senderID, body)
 	if err != nil {
 		return models.AssignmentMessage{}, err
 	}
@@ -56,7 +56,7 @@ func (s *AssignmentMessageService) SendMessage(awID, senderID int64, body string
 		recipientID = studentID
 	}
 	meta := map[string]interface{}{
-		"assigned_workout_id": awID,
+		"assigned_workout_id": workoutID,
 		"workout_title":       title,
 		"sender_id":           senderID,
 		"sender_name":         msg.SenderName,
@@ -67,8 +67,8 @@ func (s *AssignmentMessageService) SendMessage(awID, senderID int64, body string
 	return msg, nil
 }
 
-func (s *AssignmentMessageService) MarkRead(awID, userID int64) error {
-	coachID, studentID, _, _, err := s.repo.GetParticipants(awID)
+func (s *AssignmentMessageService) MarkRead(workoutID, userID int64) error {
+	coachID, studentID, _, _, err := s.repo.GetParticipants(workoutID)
 	if err == sql.ErrNoRows {
 		return ErrNotFound
 	}
@@ -78,18 +78,17 @@ func (s *AssignmentMessageService) MarkRead(awID, userID int64) error {
 	if userID != coachID && userID != studentID {
 		return ErrForbidden
 	}
-	return s.repo.MarkRead(awID, userID)
+	return s.repo.MarkRead(workoutID, userID)
 }
 
-func (s *AssignmentMessageService) GetAssignedWorkoutDetail(awID, userID int64) (models.AssignedWorkout, error) {
-	aw, err := s.repo.GetAssignedWorkoutDetail(awID, userID)
+func (s *AssignmentMessageService) GetWorkoutDetail(workoutID, userID int64) (models.Workout, error) {
+	aw, err := s.repo.GetWorkoutDetail(workoutID, userID)
 	if err == sql.ErrNoRows {
-		return models.AssignedWorkout{}, ErrNotFound
+		return models.Workout{}, ErrNotFound
 	}
 	if err != nil {
-		return models.AssignedWorkout{}, err
+		return models.Workout{}, err
 	}
-	aw.Segments = s.repo.FetchSegments(awID)
 	if aw.ImageFileID != nil {
 		if uuid, err := s.repo.GetFileUUID(*aw.ImageFileID); err == nil {
 			aw.ImageURL = "/api/files/" + uuid + "/download"

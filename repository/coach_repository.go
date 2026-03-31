@@ -3,15 +3,10 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
-	"log"
+	"time"
 
 	"github.com/fitreg/api/models"
 )
-
-// ErrStatusConflict is returned when an assigned workout cannot be transitioned
-// because it is already in a terminal state (completed or skipped).
-var ErrStatusConflict = errors.New("workout already finalized")
 
 type coachRepository struct {
 	db *sql.DB
@@ -77,10 +72,13 @@ func (r *coachRepository) EndRelationship(csID int64) error {
 
 func (r *coachRepository) GetStudentWorkouts(studentID int64) ([]models.Workout, error) {
 	rows, err := r.db.Query(`
-		SELECT id, user_id, date, distance_km, duration_seconds, avg_pace, calories, avg_heart_rate, feeling, type, notes, created_at, updated_at
+		SELECT id, user_id, coach_id, title, description, type, notes, due_date,
+			distance_km, duration_seconds, expected_fields,
+			result_distance_km, result_time_seconds, result_heart_rate, result_feeling,
+			avg_pace, calories, image_file_id, status, created_at, updated_at
 		FROM workouts
 		WHERE user_id = ?
-		ORDER BY date DESC
+		ORDER BY due_date DESC
 	`, studentID)
 	if err != nil {
 		return nil, err
@@ -90,13 +88,34 @@ func (r *coachRepository) GetStudentWorkouts(studentID int64) ([]models.Workout,
 	workouts := []models.Workout{}
 	for rows.Next() {
 		var wo models.Workout
-		var avgPace, workoutType, notes sql.NullString
-		if err := rows.Scan(&wo.ID, &wo.UserID, &wo.Date, &wo.DistanceKm, &wo.DurationSeconds,
-			&avgPace, &wo.Calories, &wo.AvgHeartRate, &wo.Feeling, &workoutType, &notes, &wo.CreatedAt, &wo.UpdatedAt); err != nil {
+		var coachID sql.NullInt64
+		var title, description, workoutType, notes, avgPace sql.NullString
+		var distanceKm sql.NullFloat64
+		var durationSeconds, calories sql.NullInt64
+		var expectedFields sql.NullString
+		var resultDistKm sql.NullFloat64
+		var resultTimeSec, resultHR, resultFeeling, imageFileID sql.NullInt64
+		var dueDate sql.NullString
+		if err := rows.Scan(
+			&wo.ID, &wo.UserID, &coachID,
+			&title, &description, &workoutType, &notes, &dueDate,
+			&distanceKm, &durationSeconds,
+			&expectedFields,
+			&resultDistKm, &resultTimeSec, &resultHR, &resultFeeling,
+			&avgPace, &calories, &imageFileID,
+			&wo.Status, &wo.CreatedAt, &wo.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		if avgPace.Valid {
-			wo.AvgPace = avgPace.String
+		if coachID.Valid {
+			v := coachID.Int64
+			wo.CoachID = &v
+		}
+		if title.Valid {
+			wo.Title = title.String
+		}
+		if description.Valid {
+			wo.Description = description.String
 		}
 		if workoutType.Valid {
 			wo.Type = workoutType.String
@@ -104,500 +123,47 @@ func (r *coachRepository) GetStudentWorkouts(studentID int64) ([]models.Workout,
 		if notes.Valid {
 			wo.Notes = notes.String
 		}
+		if dueDate.Valid {
+			wo.DueDate = truncateDate(dueDate.String)
+		}
+		if distanceKm.Valid {
+			wo.DistanceKm = distanceKm.Float64
+		}
+		if durationSeconds.Valid {
+			wo.DurationSeconds = int(durationSeconds.Int64)
+		}
+		if expectedFields.Valid {
+			wo.ExpectedFields = json.RawMessage(expectedFields.String)
+		}
+		if resultDistKm.Valid {
+			v := resultDistKm.Float64
+			wo.ResultDistanceKm = &v
+		}
+		if resultTimeSec.Valid {
+			v := int(resultTimeSec.Int64)
+			wo.ResultTimeSeconds = &v
+		}
+		if resultHR.Valid {
+			v := int(resultHR.Int64)
+			wo.ResultHeartRate = &v
+		}
+		if resultFeeling.Valid {
+			v := int(resultFeeling.Int64)
+			wo.ResultFeeling = &v
+		}
+		if avgPace.Valid {
+			wo.AvgPace = avgPace.String
+		}
+		if calories.Valid {
+			wo.Calories = int(calories.Int64)
+		}
+		if imageFileID.Valid {
+			v := imageFileID.Int64
+			wo.ImageFileID = &v
+		}
 		workouts = append(workouts, wo)
 	}
-	return workouts, nil
-}
-
-func (r *coachRepository) ListAssignedWorkouts(coachID int64, studentID int64, statusFilter, startDate, endDate string, limit, offset int) ([]models.AssignedWorkout, int, error) {
-	query := `
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as student_name,
-			(SELECT COUNT(*) FROM assignment_messages am WHERE am.assigned_workout_id = aw.id AND am.sender_id != ? AND am.is_read = FALSE)
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.student_id
-		WHERE aw.coach_id = ?
-	`
-	args := []interface{}{coachID, coachID}
-
-	if studentID != 0 {
-		query += " AND aw.student_id = ?"
-		args = append(args, studentID)
-	}
-
-	if statusFilter == "pending" {
-		query += " AND aw.status = 'pending'"
-	} else if statusFilter == "finished" {
-		query += " AND aw.status IN ('completed', 'skipped')"
-	}
-
-	if startDate != "" && endDate != "" {
-		query += " AND aw.due_date >= ? AND aw.due_date <= ?"
-		args = append(args, startDate, endDate)
-	}
-
-	// Count total before pagination
-	var total int
-	countQuery := "SELECT COUNT(*) FROM assigned_workouts aw WHERE aw.coach_id = ?"
-	countArgs := []interface{}{coachID}
-	if studentID != 0 {
-		countQuery += " AND aw.student_id = ?"
-		countArgs = append(countArgs, studentID)
-	}
-	if statusFilter == "pending" {
-		countQuery += " AND aw.status = 'pending'"
-	} else if statusFilter == "finished" {
-		countQuery += " AND aw.status IN ('completed', 'skipped')"
-	}
-	if startDate != "" && endDate != "" {
-		countQuery += " AND aw.due_date >= ? AND aw.due_date <= ?"
-		countArgs = append(countArgs, startDate, endDate)
-	}
-	if err := r.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
-		log.Printf("count assigned workouts: %v", err)
-	}
-
-	query += " ORDER BY aw.due_date DESC"
-	if limit > 0 {
-		query += " LIMIT ? OFFSET ?"
-		args = append(args, limit, offset)
-	}
-
-	rows, err := r.db.Query(query, args...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	workouts := []models.AssignedWorkout{}
-	for rows.Next() {
-		var aw models.AssignedWorkout
-		var description, notes, dueDate, expectedFields, workoutType sql.NullString
-		var distanceKm sql.NullFloat64
-		var durationSeconds sql.NullInt64
-		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
-			&distanceKm, &durationSeconds, &notes, &expectedFields,
-			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.ImageFileID, &aw.Status, &dueDate,
-			&aw.CreatedAt, &aw.UpdatedAt, &aw.StudentName, &aw.UnreadMessageCount); err != nil {
-			return nil, 0, err
-		}
-		if description.Valid {
-			aw.Description = description.String
-		}
-		if notes.Valid {
-			aw.Notes = notes.String
-		}
-		if dueDate.Valid {
-			aw.DueDate = truncateDate(dueDate.String)
-		}
-		if expectedFields.Valid {
-			aw.ExpectedFields = json.RawMessage(expectedFields.String)
-		}
-		if workoutType.Valid {
-			aw.Type = workoutType.String
-		}
-		if distanceKm.Valid {
-			aw.DistanceKm = distanceKm.Float64
-		}
-		if durationSeconds.Valid {
-			aw.DurationSeconds = int(durationSeconds.Int64)
-		}
-		workouts = append(workouts, aw)
-	}
-
-	for i := range workouts {
-		workouts[i].Segments = r.FetchSegments(workouts[i].ID)
-		if workouts[i].ImageFileID != nil {
-			if uuid, err := r.GetFileUUID(*workouts[i].ImageFileID); err == nil {
-				workouts[i].ImageURL = "/api/files/" + uuid + "/download"
-			}
-		}
-	}
-
-	return workouts, total, nil
-}
-
-func (r *coachRepository) CreateAssignedWorkout(coachID int64, req models.CreateAssignedWorkoutRequest) (models.AssignedWorkout, error) {
-	var dueDateVal interface{}
-	if req.DueDate != "" {
-		dueDateVal = req.DueDate
-	}
-
-	if len(req.ExpectedFields) == 0 {
-		req.ExpectedFields = []string{"feeling"}
-	}
-	expectedFieldsJSON, err := json.Marshal(req.ExpectedFields)
-	if err != nil {
-		log.Printf("marshal expected fields: %v", err)
-	}
-
-	log.Printf("Creating assigned workout: coach=%d student=%d title=%s type=%s due=%v", coachID, req.StudentID, req.Title, req.Type, dueDateVal)
-	result, err := r.db.Exec(`
-		INSERT INTO assigned_workouts (coach_id, student_id, title, description, type, distance_km, duration_seconds, notes, expected_fields, due_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, coachID, req.StudentID, req.Title, req.Description, req.Type, req.DistanceKm, req.DurationSeconds, req.Notes, expectedFieldsJSON, dueDateVal)
-	if err != nil {
-		return models.AssignedWorkout{}, err
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		log.Printf("get last insert id for assigned workout: %v", err)
-	}
-
-	// Insert segments
-	for i, seg := range req.Segments {
-		log.Printf("Inserting segment %d: type=%s unit=%s intensity=%s work_unit=%s work_intensity=%s rest_unit=%s rest_intensity=%s",
-			i, seg.SegmentType, seg.Unit, seg.Intensity, seg.WorkUnit, seg.WorkIntensity, seg.RestUnit, seg.RestIntensity)
-		if _, err := r.db.Exec(`
-			INSERT INTO assigned_workout_segments
-				(assigned_workout_id, order_index, segment_type, repetitions, value, unit, intensity,
-				 work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, id, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
-			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity); err != nil {
-			log.Printf("ERROR inserting segment %d: %v", i, err)
-			return models.AssignedWorkout{}, err
-		}
-	}
-
-	return r.GetAssignedWorkout(id, coachID)
-}
-
-func (r *coachRepository) GetAssignedWorkout(awID, coachID int64) (models.AssignedWorkout, error) {
-	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields, workoutType sql.NullString
-	var distanceKm sql.NullFloat64
-	var durationSeconds sql.NullInt64
-	var studentName string
-	err := r.db.QueryRow(`
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as student_name
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.student_id
-		WHERE aw.id = ? AND aw.coach_id = ?
-	`, awID, coachID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
-		&distanceKm, &durationSeconds, &notes, &expectedFields,
-		&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-		&aw.ImageFileID, &aw.Status, &dueDate,
-		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
-	if err != nil {
-		return models.AssignedWorkout{}, err
-	}
-	if workoutType.Valid {
-		aw.Type = workoutType.String
-	}
-	if distanceKm.Valid {
-		aw.DistanceKm = distanceKm.Float64
-	}
-	if durationSeconds.Valid {
-		aw.DurationSeconds = int(durationSeconds.Int64)
-	}
-	if description.Valid {
-		aw.Description = description.String
-	}
-	if notes.Valid {
-		aw.Notes = notes.String
-	}
-	if dueDate.Valid {
-		aw.DueDate = truncateDate(dueDate.String)
-	}
-	if expectedFields.Valid {
-		aw.ExpectedFields = json.RawMessage(expectedFields.String)
-	}
-	aw.StudentName = studentName
-	aw.Segments = r.FetchSegments(aw.ID)
-	if aw.ImageFileID != nil {
-		if uuid, err := r.GetFileUUID(*aw.ImageFileID); err == nil {
-			aw.ImageURL = "/api/files/" + uuid + "/download"
-		}
-	}
-	return aw, nil
-}
-
-func (r *coachRepository) GetAssignedWorkoutStatus(awID, coachID int64) (string, error) {
-	var status string
-	err := r.db.QueryRow("SELECT status FROM assigned_workouts WHERE id = ? AND coach_id = ?", awID, coachID).Scan(&status)
-	return status, err
-}
-
-func (r *coachRepository) UpdateAssignedWorkout(awID, coachID int64, req models.UpdateAssignedWorkoutRequest) (models.AssignedWorkout, error) {
-
-	var dueDateVal interface{}
-	if req.DueDate != "" {
-		dueDateVal = req.DueDate
-	}
-
-	if len(req.ExpectedFields) == 0 {
-		req.ExpectedFields = []string{"feeling"}
-	}
-	efJSON, err := json.Marshal(req.ExpectedFields)
-	if err != nil {
-		log.Printf("marshal expected fields for update: %v", err)
-	}
-
-	result, err := r.db.Exec(`
-		UPDATE assigned_workouts
-		SET title = ?, description = ?, type = ?, distance_km = ?, duration_seconds = ?, notes = ?, expected_fields = ?, due_date = ?, updated_at = NOW()
-		WHERE id = ? AND coach_id = ?
-	`, req.Title, req.Description, req.Type, req.DistanceKm, req.DurationSeconds, req.Notes, efJSON, dueDateVal, awID, coachID)
-	if err != nil {
-		return models.AssignedWorkout{}, err
-	}
-	if n, _ := result.RowsAffected(); n == 0 {
-		return models.AssignedWorkout{}, sql.ErrNoRows
-	}
-
-	// Replace segments: delete old, insert new
-	if _, err := r.db.Exec("DELETE FROM assigned_workout_segments WHERE assigned_workout_id = ?", awID); err != nil {
-		log.Printf("delete old segments: %v", err)
-	}
-	for i, seg := range req.Segments {
-		if _, err := r.db.Exec(`
-			INSERT INTO assigned_workout_segments
-				(assigned_workout_id, order_index, segment_type, repetitions, value, unit, intensity,
-				 work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, awID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
-			seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity); err != nil {
-			log.Printf("insert updated segment: %v", err)
-		}
-	}
-
-	// Return updated workout (fetch by ID without coach_id filter for the SELECT back)
-	var aw models.AssignedWorkout
-	var description, notes, dueDate, expectedFields, workoutType2 sql.NullString
-	var distanceKm2 sql.NullFloat64
-	var durationSeconds2 sql.NullInt64
-	var studentName string
-	err = r.db.QueryRow(`
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as student_name
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.student_id
-		WHERE aw.id = ?
-	`, awID).Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType2,
-		&distanceKm2, &durationSeconds2, &notes, &expectedFields,
-		&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-		&aw.ImageFileID, &aw.Status, &dueDate,
-		&aw.CreatedAt, &aw.UpdatedAt, &studentName)
-	if err != nil {
-		return models.AssignedWorkout{}, err
-	}
-	if workoutType2.Valid {
-		aw.Type = workoutType2.String
-	}
-	if distanceKm2.Valid {
-		aw.DistanceKm = distanceKm2.Float64
-	}
-	if durationSeconds2.Valid {
-		aw.DurationSeconds = int(durationSeconds2.Int64)
-	}
-	if description.Valid {
-		aw.Description = description.String
-	}
-	if notes.Valid {
-		aw.Notes = notes.String
-	}
-	if dueDate.Valid {
-		aw.DueDate = truncateDate(dueDate.String)
-	}
-	if expectedFields.Valid {
-		aw.ExpectedFields = json.RawMessage(expectedFields.String)
-	}
-	aw.StudentName = studentName
-	aw.Segments = r.FetchSegments(aw.ID)
-	if aw.ImageFileID != nil {
-		if uuid, err := r.GetFileUUID(*aw.ImageFileID); err == nil {
-			aw.ImageURL = "/api/files/" + uuid + "/download"
-		}
-	}
-	return aw, nil
-}
-
-func (r *coachRepository) DeleteAssignedWorkout(awID, coachID int64) error {
-	result, err := r.db.Exec("DELETE FROM assigned_workouts WHERE id = ? AND coach_id = ?", awID, coachID)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		log.Printf("get rows affected for delete assigned workout: %v", err)
-	}
-	if rowsAffected == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
-}
-
-func (r *coachRepository) GetMyAssignedWorkouts(studentID int64, startDate, endDate string) ([]models.AssignedWorkout, error) {
-	query := `
-		SELECT aw.id, aw.coach_id, aw.student_id, aw.title, aw.description, aw.type,
-			aw.distance_km, aw.duration_seconds, aw.notes, aw.expected_fields,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.image_file_id, aw.status, aw.due_date,
-			aw.created_at, aw.updated_at, u.name as coach_name,
-			(SELECT COUNT(*) FROM assignment_messages am WHERE am.assigned_workout_id = aw.id AND am.sender_id != ? AND am.is_read = FALSE)
-		FROM assigned_workouts aw
-		JOIN users u ON u.id = aw.coach_id
-		WHERE aw.student_id = ?
-	`
-	args := []interface{}{studentID, studentID}
-
-	if startDate != "" && endDate != "" {
-		query += " AND aw.due_date >= ? AND aw.due_date <= ?"
-		args = append(args, startDate, endDate)
-	}
-
-	query += " ORDER BY aw.due_date ASC"
-
-	rows, err := r.db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	workouts := []models.AssignedWorkout{}
-	for rows.Next() {
-		var aw models.AssignedWorkout
-		var description, notes, dueDate, expectedFields, workoutType sql.NullString
-		var distanceKm sql.NullFloat64
-		var durationSeconds sql.NullInt64
-		if err := rows.Scan(&aw.ID, &aw.CoachID, &aw.StudentID, &aw.Title, &description, &workoutType,
-			&distanceKm, &durationSeconds, &notes, &expectedFields,
-			&aw.ResultTimeSeconds, &aw.ResultDistanceKm, &aw.ResultHeartRate, &aw.ResultFeeling,
-			&aw.ImageFileID, &aw.Status, &dueDate,
-			&aw.CreatedAt, &aw.UpdatedAt, &aw.CoachName, &aw.UnreadMessageCount); err != nil {
-			return nil, err
-		}
-		if description.Valid {
-			aw.Description = description.String
-		}
-		if notes.Valid {
-			aw.Notes = notes.String
-		}
-		if dueDate.Valid {
-			aw.DueDate = truncateDate(dueDate.String)
-		}
-		if expectedFields.Valid {
-			aw.ExpectedFields = json.RawMessage(expectedFields.String)
-		}
-		if workoutType.Valid {
-			aw.Type = workoutType.String
-		}
-		if distanceKm.Valid {
-			aw.DistanceKm = distanceKm.Float64
-		}
-		if durationSeconds.Valid {
-			aw.DurationSeconds = int(durationSeconds.Int64)
-		}
-		workouts = append(workouts, aw)
-	}
-
-	for i := range workouts {
-		workouts[i].Segments = r.FetchSegments(workouts[i].ID)
-		if workouts[i].ImageFileID != nil {
-			if uuid, err := r.GetFileUUID(*workouts[i].ImageFileID); err == nil {
-				workouts[i].ImageURL = "/api/files/" + uuid + "/download"
-			}
-		}
-	}
-
-	return workouts, nil
-}
-
-func (r *coachRepository) UpdateAssignedWorkoutStatus(awID, studentID int64, req models.UpdateAssignedWorkoutStatusRequest) (coachID int64, workoutTitle string, err error) {
-	// Only allow transitioning from 'pending' — this enforces the state machine
-	// atomically and prevents race conditions with concurrent completion requests.
-	result, err := r.db.Exec(`
-		UPDATE assigned_workouts SET status = ?,
-			result_time_seconds = ?, result_distance_km = ?, result_heart_rate = ?, result_feeling = ?,
-			image_file_id = ?, updated_at = NOW()
-		WHERE id = ? AND student_id = ? AND status = 'pending'
-	`, req.Status, req.ResultTimeSeconds, req.ResultDistanceKm, req.ResultHeartRate, req.ResultFeeling, req.ImageFileID, awID, studentID)
-	if err != nil {
-		return 0, "", err
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		log.Printf("get rows affected for update status: %v", err)
-	}
-	if rowsAffected == 0 {
-		// Distinguish: does the record exist at all, or is it already in a terminal state?
-		var exists int
-		checkErr := r.db.QueryRow(
-			"SELECT 1 FROM assigned_workouts WHERE id = ? AND student_id = ?", awID, studentID,
-		).Scan(&exists)
-		if checkErr == sql.ErrNoRows {
-			return 0, "", sql.ErrNoRows
-		}
-		return 0, "", ErrStatusConflict
-	}
-
-	// If completed, create a workout record for the athlete
-	if req.Status == "completed" {
-		var aw struct {
-			Type            string
-			DistanceKm      float64
-			DurationSeconds int
-			Notes           sql.NullString
-			DueDate         sql.NullString
-		}
-		if err := r.db.QueryRow(`SELECT COALESCE(type,'easy'), COALESCE(distance_km,0), COALESCE(duration_seconds,0), notes, due_date
-			FROM assigned_workouts WHERE id = ?`, awID).Scan(&aw.Type, &aw.DistanceKm, &aw.DurationSeconds, &aw.Notes, &aw.DueDate); err != nil {
-			log.Printf("fetch assigned workout for completion: %v", err)
-		}
-
-		finalDistance := aw.DistanceKm
-		if req.ResultDistanceKm != nil {
-			finalDistance = *req.ResultDistanceKm
-		}
-		finalDuration := aw.DurationSeconds
-		if req.ResultTimeSeconds != nil {
-			finalDuration = *req.ResultTimeSeconds
-		}
-		var avgHR int
-		if req.ResultHeartRate != nil {
-			avgHR = *req.ResultHeartRate
-		}
-
-		var notes interface{}
-		if aw.Notes.Valid {
-			notes = aw.Notes.String
-		}
-
-		var insertErr error
-		if aw.DueDate.Valid {
-			_, insertErr = r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-				studentID, truncateDate(aw.DueDate.String), finalDistance, finalDuration, avgHR, aw.Type, notes)
-		} else {
-			_, insertErr = r.db.Exec(`INSERT INTO workouts (user_id, date, distance_km, duration_seconds, avg_heart_rate, type, notes, created_at, updated_at)
-				VALUES (?, CURDATE(), ?, ?, ?, ?, ?, NOW(), NOW())`,
-				studentID, finalDistance, finalDuration, avgHR, aw.Type, notes)
-		}
-		if insertErr != nil {
-			log.Printf("insert workout from completed assignment: %v", insertErr)
-		}
-	}
-
-	// Fetch coachID and workoutTitle for notification
-	if err := r.db.QueryRow("SELECT coach_id, title FROM assigned_workouts WHERE id = ?", awID).Scan(&coachID, &workoutTitle); err != nil {
-		log.Printf("fetch coach id and title for status notification: %v", err)
-	}
-
-	return coachID, workoutTitle, nil
+	return workouts, rows.Err()
 }
 
 func (r *coachRepository) GetDailySummary(coachID int64, date string, includeSegments bool) ([]models.DailySummaryItem, error) {
@@ -605,18 +171,18 @@ func (r *coachRepository) GetDailySummary(coachID int64, date string, includeSeg
 		SELECT
 			u.id, u.name,
 			CASE WHEN u.custom_avatar IS NOT NULL AND u.custom_avatar != '' THEN u.custom_avatar ELSE u.avatar_url END as avatar,
-			aw.id, aw.title, COALESCE(aw.type, ''), aw.distance_km, aw.duration_seconds,
-			COALESCE(aw.description, ''), COALESCE(aw.notes, ''), aw.status,
-			aw.result_time_seconds, aw.result_distance_km, aw.result_heart_rate, aw.result_feeling,
-			aw.due_date, aw.created_at
+			w.id, w.title, COALESCE(w.type, ''), w.distance_km, w.duration_seconds,
+			COALESCE(w.description, ''), COALESCE(w.notes, ''), w.status,
+			w.result_time_seconds, w.result_distance_km, w.result_heart_rate, w.result_feeling,
+			w.due_date, w.created_at
 		FROM coach_students cs
 		JOIN users u ON u.id = cs.student_id
-		LEFT JOIN assigned_workouts aw
-			ON aw.student_id = cs.student_id
-			AND aw.coach_id = ?
-			AND aw.due_date = ?
+		LEFT JOIN workouts w
+			ON w.user_id = cs.student_id
+			AND w.coach_id = ?
+			AND w.due_date = ?
 		WHERE cs.coach_id = ? AND cs.status = 'active'
-		ORDER BY u.name ASC, aw.created_at DESC
+		ORDER BY u.name ASC, w.created_at DESC
 	`, coachID, date, coachID)
 	if err != nil {
 		return nil, err
@@ -703,12 +269,33 @@ func (r *coachRepository) GetDailySummary(coachID int64, date string, includeSeg
 	if includeSegments {
 		for i, item := range items {
 			if item.Workout != nil {
-				items[i].Workout.Segments = r.FetchSegments(item.Workout.ID)
+				segRows, err := r.db.Query(`
+					SELECT id, workout_id, order_index, segment_type,
+						COALESCE(repetitions,1), COALESCE(value,0), COALESCE(unit,''), COALESCE(intensity,''),
+						COALESCE(work_value,0), COALESCE(work_unit,''), COALESCE(work_intensity,''),
+						COALESCE(rest_value,0), COALESCE(rest_unit,''), COALESCE(rest_intensity,'')
+					FROM workout_segments WHERE workout_id = ? ORDER BY order_index
+				`, item.Workout.ID)
+				if err == nil {
+					segs := []models.WorkoutSegment{}
+					for segRows.Next() {
+						var s models.WorkoutSegment
+						if err := segRows.Scan(&s.ID, &s.WorkoutID, &s.OrderIndex, &s.SegmentType,
+							&s.Repetitions, &s.Value, &s.Unit, &s.Intensity,
+							&s.WorkValue, &s.WorkUnit, &s.WorkIntensity,
+							&s.RestValue, &s.RestUnit, &s.RestIntensity); err != nil {
+							continue
+						}
+						segs = append(segs, s)
+					}
+					segRows.Close()
+					items[i].Workout.Segments = segs
+				}
 			}
 		}
 	}
 
-	return items, nil
+	return items, rows.Err()
 }
 
 func (r *coachRepository) GetUserName(id int64) (string, error) {
@@ -717,63 +304,24 @@ func (r *coachRepository) GetUserName(id int64) (string, error) {
 	return name, err
 }
 
-func (r *coachRepository) FetchSegments(awID int64) []models.WorkoutSegment {
-	rows, err := r.db.Query(`
-		SELECT id, assigned_workout_id, order_index, segment_type, repetitions,
-			value, unit, intensity, work_value, work_unit, work_intensity,
-			rest_value, rest_unit, rest_intensity
-		FROM assigned_workout_segments
-		WHERE assigned_workout_id = ?
-		ORDER BY order_index ASC
-	`, awID)
-	if err != nil {
-		return []models.WorkoutSegment{}
-	}
-	defer rows.Close()
-
-	segments := []models.WorkoutSegment{}
-	for rows.Next() {
-		var s models.WorkoutSegment
-		if err := rows.Scan(&s.ID, &s.AssignedWorkoutID, &s.OrderIndex, &s.SegmentType,
-			&s.Repetitions, &s.Value, &s.Unit, &s.Intensity,
-			&s.WorkValue, &s.WorkUnit, &s.WorkIntensity,
-			&s.RestValue, &s.RestUnit, &s.RestIntensity); err != nil {
-			continue
-		}
-		segments = append(segments, s)
-	}
-	return segments
-}
-
-func (r *coachRepository) GetFileUUID(fileID int64) (string, error) {
-	var uuid string
-	err := r.db.QueryRow("SELECT uuid FROM files WHERE id = ?", fileID).Scan(&uuid)
-	return uuid, err
-}
-
 func (r *coachRepository) GetWeeklyLoad(studentID int64, weeks int) ([]models.WeeklyLoadEntry, error) {
+	cutoff := time.Now().UTC().AddDate(0, 0, -weeks*7).Format("2006-01-02")
 	rows, err := r.db.Query(`
 		SELECT
-			DATE_SUB(due_date, INTERVAL WEEKDAY(due_date) DAY)    AS week_start,
-			COALESCE(SUM(distance_km), 0)                          AS planned_km,
-			COALESCE(SUM(CASE WHEN status = 'completed' THEN COALESCE(result_distance_km, distance_km) ELSE 0 END), 0) AS actual_km,
-			COALESCE(SUM(duration_seconds), 0)                     AS planned_seconds,
-			COALESCE(SUM(CASE WHEN status = 'completed' THEN COALESCE(result_time_seconds, duration_seconds) ELSE 0 END), 0) AS actual_seconds,
-			COUNT(*)                                                AS sessions_planned,
-			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)  AS sessions_completed,
-			SUM(CASE WHEN status = 'skipped'   THEN 1 ELSE 0 END)  AS sessions_skipped,
-			EXISTS (
-				SELECT 1 FROM workouts w
-				WHERE w.user_id = ?
-				  AND DATE_SUB(w.date, INTERVAL WEEKDAY(w.date) DAY) =
-				      DATE_SUB(aw.due_date, INTERVAL WEEKDAY(aw.due_date) DAY)
-			) AS has_personal_workouts
-		FROM assigned_workouts aw
-		WHERE aw.student_id = ?
-		  AND aw.due_date >= DATE_SUB(CURDATE(), INTERVAL ? WEEK)
+			DATE_FORMAT(DATE_SUB(due_date, INTERVAL WEEKDAY(due_date) DAY), '%Y-%m-%d') AS week_start,
+			SUM(CASE WHEN coach_id IS NOT NULL THEN COALESCE(distance_km, 0) ELSE 0 END) AS planned_km,
+			SUM(CASE WHEN status = 'completed' THEN COALESCE(result_distance_km, distance_km, 0) ELSE 0 END) AS actual_km,
+			SUM(CASE WHEN coach_id IS NOT NULL THEN COALESCE(duration_seconds, 0) ELSE 0 END) AS planned_seconds,
+			SUM(CASE WHEN status = 'completed' THEN COALESCE(result_time_seconds, duration_seconds, 0) ELSE 0 END) AS actual_seconds,
+			COUNT(CASE WHEN coach_id IS NOT NULL THEN 1 END) AS sessions_planned,
+			COUNT(CASE WHEN status = 'completed' THEN 1 END) AS sessions_completed,
+			COUNT(CASE WHEN status = 'skipped' THEN 1 END) AS sessions_skipped,
+			MAX(CASE WHEN coach_id IS NULL THEN 1 ELSE 0 END) AS has_personal_workouts
+		FROM workouts
+		WHERE user_id = ? AND due_date >= ?
 		GROUP BY week_start
-		ORDER BY week_start DESC
-	`, studentID, studentID, weeks)
+		ORDER BY week_start ASC
+	`, studentID, cutoff)
 	if err != nil {
 		return nil, err
 	}

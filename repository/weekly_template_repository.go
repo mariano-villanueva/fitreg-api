@@ -94,7 +94,7 @@ func (r *weeklyTemplateRepository) getDays(templateID int64) ([]models.WeeklyTem
 
 func (r *weeklyTemplateRepository) getSegments(dayID int64) ([]models.WeeklyTemplateSegment, error) {
 	rows, err := r.db.Query(
-		`SELECT id, weekly_template_day_id, order_index, segment_type, repetitions,
+		`SELECT id, parent_id, weekly_template_day_id, order_index, segment_type, repetitions,
 		        value, unit, intensity, work_value, work_unit, work_intensity,
 		        rest_value, rest_unit, rest_intensity
 		 FROM weekly_template_day_segments WHERE weekly_template_day_id = ? ORDER BY order_index`, dayID,
@@ -107,12 +107,17 @@ func (r *weeklyTemplateRepository) getSegments(dayID int64) ([]models.WeeklyTemp
 	var segs []models.WeeklyTemplateSegment
 	for rows.Next() {
 		var s models.WeeklyTemplateSegment
+		var parentID sql.NullInt64
 		var val, wv, rv sql.NullFloat64
 		var unit, intensity, wu, wi, ru, ri sql.NullString
-		if err := rows.Scan(&s.ID, &s.WeeklyTemplateDayID, &s.OrderIndex, &s.SegmentType,
+		if err := rows.Scan(&s.ID, &parentID, &s.WeeklyTemplateDayID, &s.OrderIndex, &s.SegmentType,
 			&s.Repetitions, &val, &unit, &intensity,
 			&wv, &wu, &wi, &rv, &ru, &ri); err != nil {
 			return nil, err
+		}
+		if parentID.Valid {
+			v := parentID.Int64
+			s.ParentID = &v
 		}
 		s.Value = val.Float64
 		s.Unit = unit.String
@@ -220,14 +225,52 @@ func (r *weeklyTemplateRepository) PutDays(templateID int64, days []models.Weekl
 		if err != nil {
 			return err
 		}
-		for i, seg := range d.Segments {
+		// tempIDToRealID maps client-assigned negative TempID values to DB-generated IDs.
+		tempIDToRealID := map[int64]int64{}
+
+		// Pass 1: insert root-level segments (ParentID is nil).
+		for _, seg := range d.Segments {
+			if seg.ParentID != nil {
+				continue // child segment, handled in pass 2
+			}
+			result, err := tx.Exec(
+				`INSERT INTO weekly_template_day_segments
+				 (weekly_template_day_id, parent_id, order_index, segment_type, repetitions, value, unit, intensity,
+				  work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
+				 VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				dayID, seg.OrderIndex, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
+				seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity,
+			)
+			if err != nil {
+				return err
+			}
+			if seg.SegmentType == "block" && seg.TempID != nil {
+				realID, err := result.LastInsertId()
+				if err != nil {
+					return err
+				}
+				tempIDToRealID[*seg.TempID] = realID
+			}
+		}
+
+		// Pass 2: insert child segments (ParentID is not nil).
+		for _, seg := range d.Segments {
+			if seg.ParentID == nil {
+				continue
+			}
+			realParentID, ok := tempIDToRealID[*seg.ParentID]
+			if !ok {
+				return fmt.Errorf("segment references unknown block temp_id %d", *seg.ParentID)
+			}
 			if _, err := tx.Exec(
 				`INSERT INTO weekly_template_day_segments
-				 (weekly_template_day_id, order_index, segment_type, repetitions, value, unit, intensity,
+				 (weekly_template_day_id, parent_id, order_index, segment_type, repetitions, value, unit, intensity,
 				  work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				dayID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,
-				seg.WorkValue, seg.WorkUnit, seg.WorkIntensity, seg.RestValue, seg.RestUnit, seg.RestIntensity,
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				dayID, realParentID, seg.OrderIndex, seg.SegmentType, seg.Repetitions,
+				seg.Value, seg.Unit, seg.Intensity,
+				seg.WorkValue, seg.WorkUnit, seg.WorkIntensity,
+				seg.RestValue, seg.RestUnit, seg.RestIntensity,
 			); err != nil {
 				return err
 			}
@@ -275,8 +318,8 @@ func (r *weeklyTemplateRepository) Assign(templateID, coachID int64, req models.
 		weekStart := startDate.Format(time.DateOnly)
 		weekEnd := startDate.AddDate(0, 0, 6).Format(time.DateOnly)
 		if _, err := tx.Exec(
-			`DELETE FROM assigned_workouts WHERE student_id = ? AND due_date >= ? AND due_date <= ?`,
-			req.StudentID, weekStart, weekEnd,
+			`DELETE FROM workouts WHERE user_id = ? AND coach_id = ? AND due_date >= ? AND due_date <= ?`,
+			req.StudentID, coachID, weekStart, weekEnd,
 		); err != nil {
 			return nil, nil, err
 		}
@@ -287,8 +330,8 @@ func (r *weeklyTemplateRepository) Assign(templateID, coachID int64, req models.
 			dateStr := p.dueDate.Format(time.DateOnly)
 			var exists int
 			if err := tx.QueryRow(
-				`SELECT COUNT(*) FROM assigned_workouts WHERE student_id = ? AND due_date = ?`,
-				req.StudentID, dateStr,
+				`SELECT COUNT(*) FROM workouts WHERE user_id = ? AND coach_id = ? AND due_date = ?`,
+				req.StudentID, coachID, dateStr,
 			).Scan(&exists); err != nil {
 				return nil, nil, err
 			}
@@ -306,8 +349,8 @@ func (r *weeklyTemplateRepository) Assign(templateID, coachID int64, req models.
 	for _, p := range planned {
 		dateStr := p.dueDate.Format(time.DateOnly)
 		res, err := tx.Exec(
-			`INSERT INTO assigned_workouts
-			 (coach_id, student_id, title, description, type, distance_km, duration_seconds, notes, due_date, status)
+			`INSERT INTO workouts
+			 (coach_id, user_id, title, description, type, distance_km, duration_seconds, notes, due_date, status)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
 			coachID, req.StudentID, p.day.Title, p.day.Description, p.day.Type,
 			p.day.DistanceKm, p.day.DurationSeconds, p.day.Notes, dateStr,
@@ -321,8 +364,8 @@ func (r *weeklyTemplateRepository) Assign(templateID, coachID int64, req models.
 		}
 		for i, seg := range p.day.Segments {
 			if _, err := tx.Exec(
-				`INSERT INTO assigned_workout_segments
-				 (assigned_workout_id, order_index, segment_type, repetitions, value, unit, intensity,
+				`INSERT INTO workout_segments
+				 (workout_id, order_index, segment_type, repetitions, value, unit, intensity,
 				  work_value, work_unit, work_intensity, rest_value, rest_unit, rest_intensity)
 				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				awID, i, seg.SegmentType, seg.Repetitions, seg.Value, seg.Unit, seg.Intensity,

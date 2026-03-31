@@ -1,9 +1,6 @@
 package models
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
 type CoachStudent struct {
 	ID           int64      `json:"id"`
@@ -16,101 +13,41 @@ type CoachStudent struct {
 	CreatedAt    time.Time  `json:"created_at"`
 }
 
-type AssignedWorkout struct {
-	ID                int64            `json:"id"`
-	CoachID           int64            `json:"coach_id"`
-	StudentID         int64            `json:"student_id"`
-	Title             string           `json:"title"`
-	Description       string           `json:"description"`
-	Type              string           `json:"type"`
-	DistanceKm        float64          `json:"distance_km"`
-	DurationSeconds   int              `json:"duration_seconds"`
-	Notes             string           `json:"notes"`
-	ExpectedFields    json.RawMessage  `json:"expected_fields"`
-	ResultTimeSeconds *int             `json:"result_time_seconds"`
-	ResultDistanceKm  *float64         `json:"result_distance_km"`
-	ResultHeartRate   *int             `json:"result_heart_rate"`
-	ResultFeeling     *int             `json:"result_feeling"`
-	ImageFileID       *int64           `json:"image_file_id"`
-	Status            string           `json:"status"`
-	DueDate           string           `json:"due_date"`
-	CreatedAt         time.Time        `json:"created_at"`
-	UpdatedAt         time.Time        `json:"updated_at"`
-	StudentName       string           `json:"student_name,omitempty"`
-	CoachName         string           `json:"coach_name,omitempty"`
-	Segments           []WorkoutSegment `json:"segments"`
-	ImageURL           string           `json:"image_url,omitempty"`
-	UnreadMessageCount int              `json:"unread_message_count"`
-}
-
-type CreateAssignedWorkoutRequest struct {
-	StudentID       int64            `json:"student_id"`
-	Title           string           `json:"title"`
-	Description     string           `json:"description"`
-	Type            string           `json:"type"`
-	DistanceKm      float64          `json:"distance_km"`
-	DurationSeconds int              `json:"duration_seconds"`
-	Notes           string           `json:"notes"`
-	ExpectedFields  []string         `json:"expected_fields"`
-	DueDate         string           `json:"due_date"`
-	Segments        []SegmentRequest `json:"segments"`
-}
-
-type UpdateAssignedWorkoutRequest struct {
-	Title           string           `json:"title"`
-	Description     string           `json:"description"`
-	Type            string           `json:"type"`
-	DistanceKm      float64          `json:"distance_km"`
-	DurationSeconds int              `json:"duration_seconds"`
-	Notes           string           `json:"notes"`
-	ExpectedFields  []string         `json:"expected_fields"`
-	DueDate         string           `json:"due_date"`
-	Segments        []SegmentRequest `json:"segments"`
-}
-
-type UpdateAssignedWorkoutStatusRequest struct {
-	Status            string   `json:"status"`
-	ResultTimeSeconds *int     `json:"result_time_seconds"`
-	ResultDistanceKm  *float64 `json:"result_distance_km"`
-	ResultHeartRate   *int     `json:"result_heart_rate"`
-	ResultFeeling     *int     `json:"result_feeling"`
-	ImageFileID       *int64   `json:"image_file_id"`
-}
-
 type WorkoutSegment struct {
-	ID                int64   `json:"id"`
-	AssignedWorkoutID int64   `json:"assigned_workout_id"`
-	OrderIndex        int     `json:"order_index"`
-	SegmentType       string  `json:"segment_type"`
-	Repetitions       int     `json:"repetitions"`
-	Value             float64 `json:"value"`
-	Unit              string  `json:"unit"`
-	Intensity         string  `json:"intensity"`
-	WorkValue         float64 `json:"work_value"`
-	WorkUnit          string  `json:"work_unit"`
-	WorkIntensity     string  `json:"work_intensity"`
-	RestValue         float64 `json:"rest_value"`
-	RestUnit          string  `json:"rest_unit"`
-	RestIntensity     string  `json:"rest_intensity"`
+	ID            int64   `json:"id"`
+	ParentID      *int64  `json:"parent_id"`
+	WorkoutID     int64   `json:"workout_id"`
+	OrderIndex    int     `json:"order_index"`
+	SegmentType   string  `json:"segment_type"`
+	Repetitions   int     `json:"repetitions"`
+	Value         float64 `json:"value"`
+	Unit          string  `json:"unit"`
+	Intensity     string  `json:"intensity"`
+	WorkValue     float64 `json:"work_value"`
+	WorkUnit      string  `json:"work_unit"`
+	WorkIntensity string  `json:"work_intensity"`
+	RestValue     float64 `json:"rest_value"`
+	RestUnit      string  `json:"rest_unit"`
+	RestIntensity string  `json:"rest_intensity"`
 }
 
 type CoachAchievement struct {
-	ID         int64     `json:"id"`
-	CoachID    int64     `json:"coach_id"`
-	EventName  string    `json:"event_name"`
-	EventDate  string    `json:"event_date"`
-	DistanceKm float64   `json:"distance_km"`
-	ResultTime string    `json:"result_time"`
-	Position   int       `json:"position"`
-	ExtraInfo       string `json:"extra_info"`
-	ImageFileID     *int64 `json:"image_file_id"`
-	ImageURL        string `json:"image_url,omitempty"`
-	IsPublic        bool   `json:"is_public"`
-	IsVerified      bool   `json:"is_verified"`
-	RejectionReason string `json:"rejection_reason"`
-	VerifiedBy int64     `json:"verified_by,omitempty"`
-	VerifiedAt string    `json:"verified_at,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID              int64     `json:"id"`
+	CoachID         int64     `json:"coach_id"`
+	EventName       string    `json:"event_name"`
+	EventDate       string    `json:"event_date"`
+	DistanceKm      float64   `json:"distance_km"`
+	ResultTime      string    `json:"result_time"`
+	Position        int       `json:"position"`
+	ExtraInfo       string    `json:"extra_info"`
+	ImageFileID     *int64    `json:"image_file_id"`
+	ImageURL        string    `json:"image_url,omitempty"`
+	IsPublic        bool      `json:"is_public"`
+	IsVerified      bool      `json:"is_verified"`
+	RejectionReason string    `json:"rejection_reason"`
+	VerifiedBy      int64     `json:"verified_by,omitempty"`
+	VerifiedAt      string    `json:"verified_at,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type CreateAchievementRequest struct {
@@ -155,17 +92,17 @@ type UpdateCoachProfileRequest struct {
 }
 
 type CoachPublicProfile struct {
-	ID               int64              `json:"id"`
-	Name             string             `json:"name"`
-	AvatarURL        string             `json:"avatar_url"`
-	CoachDescription string             `json:"coach_description"`
-	AvgRating        float64            `json:"avg_rating"`
-	RatingCount      int                `json:"rating_count"`
+	ID                       int64              `json:"id"`
+	Name                     string             `json:"name"`
+	AvatarURL                string             `json:"avatar_url"`
+	CoachDescription         string             `json:"coach_description"`
+	AvgRating                float64            `json:"avg_rating"`
+	RatingCount              int                `json:"rating_count"`
 	StudentCount             int                `json:"student_count"`
 	VerifiedAchievementCount int                `json:"verified_achievement_count"`
 	IsMyCoach                bool               `json:"is_my_coach"`
-	Achievements     []CoachAchievement `json:"achievements"`
-	Ratings          []CoachRating      `json:"ratings"`
+	Achievements             []CoachAchievement `json:"achievements"`
+	Ratings                  []CoachRating      `json:"ratings"`
 }
 
 type CoachListItem struct {
@@ -181,6 +118,9 @@ type CoachListItem struct {
 }
 
 type SegmentRequest struct {
+	TempID        *int64  `json:"temp_id"`    // client-assigned negative ID for block segments; nil otherwise
+	ParentID      *int64  `json:"parent_id"`  // references TempID of parent block; nil for root segments
+	OrderIndex    int     `json:"order_index"`
 	SegmentType   string  `json:"segment_type"`
 	Repetitions   int     `json:"repetitions"`
 	Value         float64 `json:"value"`
@@ -222,12 +162,12 @@ type DailySummaryItem struct {
 	StudentID     int64                `json:"student_id"`
 	StudentName   string               `json:"student_name"`
 	StudentAvatar *string              `json:"student_avatar"`
-	Workout       *DailySummaryWorkout `json:"assigned_workout"`
+	Workout       *DailySummaryWorkout `json:"workout"`
 }
 
 // WeeklyLoadEntry represents the training load for a single week.
 type WeeklyLoadEntry struct {
-	WeekStart           string  `json:"week_start"`            // YYYY-MM-DD (Monday)
+	WeekStart           string  `json:"week_start"` // YYYY-MM-DD (Monday)
 	PlannedKm           float64 `json:"planned_km"`
 	ActualKm            float64 `json:"actual_km"`
 	PlannedSeconds      int     `json:"planned_seconds"`
